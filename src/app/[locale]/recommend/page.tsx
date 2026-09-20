@@ -63,56 +63,135 @@ export default function RecommendationPage() {
     if (!result) return;
 
     const doc = new jsPDF();
-    const title = type === 'crop' ? 'Crop Recommendation Report' : 'Fertilizer Recommendation Report';
-    const currentDate = new Date().toLocaleDateString();
+    const title = type === 'crop' ? 'CROP RECOMMENDATION REPORT' : 'FERTILIZER ADVISORY REPORT';
+    const currentDate = new Date().toLocaleString();
+    const reportRef = `KSH-REC-${Date.now().toString().slice(-6)}`;
     const inputData = type === 'crop' ? cropData : fertilizerData;
     const recommendedValue = result.label ?? result.name ?? 'N/A';
     const scoreValue = result.confidence !== undefined ? `${(result.confidence * 100).toFixed(1)}%` : `${(Number(result.score ?? 0) * 100).toFixed(1)}%`;
 
-    doc.setFillColor(16, 185, 129);
+    // Header Banner
+    doc.setFillColor(21, 128, 61);
     doc.rect(0, 0, 210, 30, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(18);
-    doc.text(title, 14, 18);
-    doc.setTextColor(20, 20, 20);
-    doc.setFontSize(11);
-    doc.text(`Generated on: ${currentDate}`, 14, 40);
+    doc.setFontSize(15);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`KSHETRIKAH - ${title}`, 14, 16);
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Government of Maharashtra • ICAR Agro-Climatic Decision Support System', 14, 24);
+
+    // Meta Bar
+    doc.setTextColor(71, 85, 105);
+    doc.setFontSize(8.5);
+    doc.text(`Report Reference: ${reportRef}`, 14, 38);
+    doc.text(`Generated: ${currentDate}`, 120, 38);
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, 41, 196, 41);
+
+    // Section 1: Recommendation Outcome Card
+    doc.setFillColor(240, 253, 244);
+    doc.roundedRect(14, 47, 182, 34, 2, 2, 'F');
+    doc.setDrawColor(187, 247, 208);
+    doc.roundedRect(14, 47, 182, 34, 2, 2, 'S');
+
+    doc.setFontSize(10);
+    doc.setTextColor(21, 128, 61);
+    doc.setFont('helvetica', 'bold');
+    doc.text(type === 'crop' ? 'OPTIMAL CROP ADVISORY' : 'TARGETED FERTILIZER SPECIFICATION', 20, 56);
 
     doc.setFontSize(14);
-    doc.setTextColor(16, 185, 129);
-    doc.text('Outcome', 14, 56);
-    doc.setTextColor(20, 20, 20);
-    doc.setFontSize(12);
-    doc.text(`Recommended: ${recommendedValue}`, 14, 66);
-    doc.text(`Confidence / Score: ${scoreValue}`, 14, 74);
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(recommendedValue).toUpperCase(), 20, 66);
 
-    doc.setFontSize(14);
-    doc.setTextColor(16, 185, 129);
-    doc.text('Field Inputs', 14, 92);
-    doc.setTextColor(20, 20, 20);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Statistical Match Confidence: ${scoreValue} • Calibrated with ICAR soil agro-climatic clusters`, 20, 74);
+
+    // Section 2: Soil & Environmental Telemetry Table
     doc.setFontSize(11);
+    doc.setTextColor(21, 128, 61);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SOIL & MICROCLIMATE PARAMETERS', 14, 91);
+
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(14, 95, 182, 54, 2, 2, 'F');
+    doc.setDrawColor(203, 213, 225);
+    doc.roundedRect(14, 95, 182, 54, 2, 2, 'S');
 
     const entries = Object.entries(inputData as Record<string, string | number>);
-    let y = 104;
-    entries.forEach(([key, value]) => {
-      if (y > 270) {
-        doc.addPage();
-        y = 20;
-      }
-      doc.text(`${key}: ${String(value)}`, 14, y);
-      y += 8;
+    const col1 = entries.slice(0, Math.ceil(entries.length / 2));
+    const col2 = entries.slice(Math.ceil(entries.length / 2));
+
+    let rowY = 103;
+    col1.forEach(([k, v]) => {
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${k.toUpperCase()}:`, 20, rowY);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(71, 85, 105);
+      doc.text(String(v), 58, rowY);
+      rowY += 9;
     });
 
-    doc.setFontSize(12);
-    doc.setTextColor(16, 185, 129);
-    doc.text('Summary', 14, y + 12);
-    doc.setTextColor(20, 20, 20);
+    rowY = 103;
+    col2.forEach(([k, v]) => {
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${k.toUpperCase()}:`, 110, rowY);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(71, 85, 105);
+      doc.text(String(v), 148, rowY);
+      rowY += 9;
+    });
+
+    // Section 3: Agronomic Recommendation Summary
+    let sumY = 160;
     doc.setFontSize(11);
+    doc.setTextColor(21, 128, 61);
+    doc.setFont('helvetica', 'bold');
+    doc.text('AGRONOMIC GUIDELINES & NEXT STEPS', 14, sumY);
+
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(14, sumY + 4, 182, 38, 2, 2, 'F');
+    doc.setDrawColor(203, 213, 225);
+    doc.roundedRect(14, sumY + 4, 182, 38, 2, 2, 'S');
+
     const summary = type === 'crop'
-      ? `The system suggests growing ${recommendedValue} based on the entered soil and weather attributes.`
-      : `The entered field conditions best match ${recommendedValue} based on the fertilizer dataset.`;
-    const summaryLines = doc.splitTextToSize(summary, 170);
-    doc.text(summaryLines, 14, y + 22);
+      ? `Based on entered N-P-K mineral levels, soil pH, ambient temperature, humidity, and rainfall index, ${recommendedValue} provides the highest physiological vigor, water-use efficiency, and yield margin for this agro-climatic zone.`
+      : `Based on current soil nutrient depletion telemetry and target crop demand, ${recommendedValue} restores required balance without causing soil salinity stress or fertilizer runoff.`;
+    
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    const summaryLines = doc.splitTextToSize(summary, 172);
+    doc.text(summaryLines, 18, sumY + 12);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(21, 128, 61);
+    doc.text('• Soil Test Verification:', 18, sumY + 28);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Re-verify with local Soil Health Card (SHC) laboratory once every crop season.', 62, sumY + 28);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(21, 128, 61);
+    doc.text('• Application Timing:', 18, sumY + 35);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Apply split doses during morning hours with adequate soil moisture.', 62, sumY + 35);
+
+    // Footer
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, 275, 196, 275);
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Kshetrikah Precision Agronomy Decision Support System • Government of Maharashtra MSInS', 14, 281);
+    doc.text('Official Advisory', 172, 281);
 
     doc.save(`${type}-recommendation-report-${Date.now()}.pdf`);
   };

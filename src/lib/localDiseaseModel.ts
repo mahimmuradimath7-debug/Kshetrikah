@@ -4,6 +4,7 @@ import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { diseaseMap } from '@/data/diseases';
+import type { BoundingBox } from '@/lib/multiInputFusion';
 
 const execFileAsync = promisify(execFile);
 
@@ -48,7 +49,7 @@ function getClassNamesPath(modelPath: string): string | null {
   return null;
 }
 
-function parsePredictionOutput(output: string): { label: string; confidence: number } | null {
+function parsePredictionOutput(output: string): { label: string; confidence: number; detectedBoxes?: BoundingBox[] } | null {
   // 1. Try parsing JSON lines first
   for (const line of output.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -56,7 +57,31 @@ function parsePredictionOutput(output: string): { label: string; confidence: num
       try {
         const parsed = JSON.parse(trimmed);
         if (parsed.prediction && typeof parsed.confidence === 'number') {
-          return { label: String(parsed.prediction).trim(), confidence: parsed.confidence };
+          const rawBoxes = parsed.detected_boxes || parsed.detectedBoxes;
+          const boxes: BoundingBox[] = [];
+          if (Array.isArray(rawBoxes)) {
+            for (const b of rawBoxes) {
+              if (b && Array.isArray(b.box_2d) && b.box_2d.length === 4) {
+                const [ymin, xmin, ymax, xmax] = b.box_2d.map(Number);
+                const x = Math.max(0, Math.min(92, xmin * 0.1));
+                const y = Math.max(0, Math.min(92, ymin * 0.1));
+                const width = Math.max(6, Math.min(100 - x, (xmax - xmin) * 0.1));
+                const height = Math.max(6, Math.min(100 - y, (ymax - ymin) * 0.1));
+                boxes.push({
+                  x: Math.round(x * 10) / 10,
+                  y: Math.round(y * 10) / 10,
+                  width: Math.round(width * 10) / 10,
+                  height: Math.round(height * 10) / 10,
+                  label: String(b.label || 'Pathological Lesion').slice(0, 36),
+                });
+              }
+            }
+          }
+          return {
+            label: String(parsed.prediction).trim(),
+            confidence: parsed.confidence,
+            detectedBoxes: boxes.length > 0 ? boxes : undefined,
+          };
         }
       } catch {
         // Fall back to line regex
@@ -187,15 +212,21 @@ function mapLabelToDiseaseId(label: string, crop?: string): string | null {
         return targetId;
       }
     }
-    // Default fallback to first disease of crop
-    const firstOfCrop = allDiseases.find((d) => d.crop === crop);
-    if (firstOfCrop) return firstOfCrop.id;
   }
 
   return null;
 }
 
-export async function predictLocalDiseaseFromDataUrl(dataUrl: string, crop: string): Promise<null | { diseaseId: string; confidence: number }> {
+export interface LocalPredictionResult {
+  diseaseId: string;
+  confidence: number;
+  detectedBoxes?: BoundingBox[];
+}
+
+export async function predictLocalDiseaseFromDataUrl(
+  dataUrl: string,
+  crop: string
+): Promise<LocalPredictionResult | null> {
   const modelPath = getModelPath();
   if (!modelPath) return null;
 
@@ -237,6 +268,7 @@ export async function predictLocalDiseaseFromDataUrl(dataUrl: string, crop: stri
     return {
       diseaseId,
       confidence: Math.max(0.05, Math.min(0.99, parsed.confidence)),
+      detectedBoxes: parsed.detectedBoxes,
     };
   } catch (error) {
     console.warn('[LocalModel] Unable to run local inference:', error);

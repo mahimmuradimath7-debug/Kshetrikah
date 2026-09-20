@@ -97,8 +97,8 @@ def preprocess_image(image_path: str, image_size: int = 224):
 CROP_SYNONYMS = {
     'maize': ['corn', 'maize'],
     'corn': ['corn', 'maize'],
-    'chili': ['chili', 'chilli', 'pepper'],
-    'pepper': ['pepper', 'bell pepper', 'chili'],
+    'chili': ['chili', 'chilli'],
+    'pepper': ['bell pepper', 'pepper'],
 }
 
 
@@ -111,7 +111,8 @@ def predict(model_path: str, image_path: str, class_names_path: str = None, imag
     probs = model.predict(x, verbose=0)[0]
 
     selected_idx = int(np.argmax(probs))
-    confidence = float(probs[selected_idx])
+    raw_confidence = float(probs[selected_idx])
+    confidence = raw_confidence
 
     if crop and class_names:
         crop_lower = crop.strip().lower()
@@ -127,7 +128,12 @@ def predict(model_path: str, image_path: str, class_names_path: str = None, imag
                 norm_sub_probs = sub_probs / sub_sum
                 best_sub_idx = int(np.argmax(norm_sub_probs))
                 selected_idx = crop_indices[best_sub_idx]
-                confidence = float(norm_sub_probs[best_sub_idx])
+                raw_crop_conf = float(probs[selected_idx])
+                # Only trust normalized probability if raw crop probability is non-negligible
+                if raw_crop_conf >= 0.18:
+                    confidence = float(norm_sub_probs[best_sub_idx])
+                else:
+                    confidence = raw_crop_conf
 
     if class_names and selected_idx < len(class_names):
         pred_name = class_names[selected_idx]
@@ -135,6 +141,128 @@ def predict(model_path: str, image_path: str, class_names_path: str = None, imag
         pred_name = f"class_{selected_idx}"
 
     return pred_name, confidence, probs
+
+
+def detect_lesion_boxes(image_path: str):
+    """Detect prominent foliar lesion and chlorosis clusters using color-space analysis."""
+    try:
+        img_path = resolve_existing_path(image_path)
+        if not img_path.exists():
+            return []
+
+        img = Image.open(img_path).convert("RGB")
+        w, h = img.size
+        sample_size = 192
+        thumb = img.resize((sample_size, sample_size))
+        arr = np.asarray(thumb, dtype=np.int32)
+
+        r = arr[:, :, 0]
+        g = arr[:, :, 1]
+        b = arr[:, :, 2]
+
+        # Brown/necrotic: reddish-brown with suppressed blue
+        necrotic = (r > g * 1.05) & (r > b * 1.3) & (r > 40)
+        # Chlorotic yellow: high red + high green, low blue
+        chlorotic = (r > 130) & (g > 130) & (b < 100) & (abs(r - g) < 50)
+        # White/gray fungal powdery mildew or sporulation
+        sporulation = (r > 180) & (g > 180) & (b > 180) & (arr.std(axis=2) < 25)
+
+        diseased = necrotic | chlorotic | sporulation
+        if not np.any(diseased):
+            # Fallback: find darkest/most divergent patch against green foliage
+            greenness = (g.astype(float) * 2) - (r + b)
+            leaf_mask = (g > 40) | (r > 40)
+            if np.any(leaf_mask):
+                divergent = (greenness < np.percentile(greenness[leaf_mask], 15)) & leaf_mask
+                diseased = divergent
+
+        cols = 16
+        rows = 16
+        cell_w = sample_size // cols
+        cell_h = sample_size // rows
+
+        grid = np.zeros((rows, cols), dtype=np.int32)
+        grid_type = {}
+
+        for cy in range(rows):
+            for cx in range(cols):
+                patch_d = diseased[cy * cell_h : (cy + 1) * cell_h, cx * cell_w : (cx + 1) * cell_w]
+                count = int(np.sum(patch_d))
+                grid[cy, cx] = count
+                if count > 0:
+                    patch_n = np.sum(necrotic[cy * cell_h : (cy + 1) * cell_h, cx * cell_w : (cx + 1) * cell_w])
+                    patch_c = np.sum(chlorotic[cy * cell_h : (cy + 1) * cell_h, cx * cell_w : (cx + 1) * cell_w])
+                    if patch_c > patch_n:
+                        grid_type[(cy, cx)] = "Chlorotic Yellow Zone"
+                    elif patch_n > 0:
+                        grid_type[(cy, cx)] = "Necrotic Blight Lesion"
+                    else:
+                        grid_type[(cy, cx)] = "Pathological Lesion Focus"
+
+        # Connected component clustering
+        visited = np.zeros((rows, cols), dtype=bool)
+        clusters = []
+
+        threshold = max(3, int(np.percentile(grid[grid > 0], 50))) if np.any(grid > 0) else 3
+
+        for cy in range(rows):
+            for cx in range(cols):
+                if not visited[cy, cx] and grid[cy, cx] >= threshold:
+                    min_x, max_x = cx, cx
+                    min_y, max_y = cy, cy
+                    total = 0
+                    dominant_label = grid_type.get((cy, cx), "Pathological Lesion Focus")
+
+                    stack = [(cy, cx)]
+                    visited[cy, cx] = True
+
+                    while stack:
+                        curr_y, curr_x = stack.pop()
+                        total += grid[curr_y, curr_x]
+                        min_x = min(min_x, curr_x)
+                        max_x = max(max_x, curr_x)
+                        min_y = min(min_y, curr_y)
+                        max_y = max(max_y, curr_y)
+
+                        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                            ny, nx = curr_y + dy, curr_x + dx
+                            if 0 <= ny < rows and 0 <= nx < cols and not visited[ny, nx] and grid[ny, nx] >= max(2, threshold - 1):
+                                visited[ny, nx] = True
+                                stack.append((ny, nx))
+
+                    span_w = max_x - min_x + 1
+                    span_h = max_y - min_y + 1
+                    if span_w < cols * 0.85 and span_h < rows * 0.85 and total >= 6:
+                        clusters.append({
+                            "min_x": min_x, "max_x": max_x,
+                            "min_y": min_y, "max_y": max_y,
+                            "total": total, "label": dominant_label
+                        })
+
+        clusters.sort(key=lambda c: c["total"], reverse=True)
+        if not clusters and np.any(grid > 0):
+            # Guarantee at least 1 prominent hotspot
+            best_cy, best_cx = np.unravel_index(np.argmax(grid), grid.shape)
+            clusters.append({
+                "min_x": max(0, best_cx - 1), "max_x": min(cols - 1, best_cx + 1),
+                "min_y": max(0, best_cy - 1), "max_y": min(rows - 1, best_cy + 1),
+                "total": int(grid[best_cy, best_cx]),
+                "label": grid_type.get((best_cy, best_cx), "Primary Lesion Zone")
+            })
+
+        boxes = []
+        for cl in clusters[:4]:
+            ymin = int(max(0, (cl["min_y"] - 0.4) / rows * 1000))
+            xmin = int(max(0, (cl["min_x"] - 0.4) / cols * 1000))
+            ymax = int(min(1000, (cl["max_y"] + 1.4) / rows * 1000))
+            xmax = int(min(1000, (cl["max_x"] + 1.4) / cols * 1000))
+            boxes.append({
+                "box_2d": [ymin, xmin, ymax, xmax],
+                "label": cl["label"]
+            })
+        return boxes
+    except Exception:
+        return []
 
 
 if __name__ == "__main__":
@@ -154,8 +282,15 @@ if __name__ == "__main__":
         image_size=args.image_size,
         crop=args.crop,
     )
+    detected_boxes = detect_lesion_boxes(args.image_path)
     if args.json:
-        print(json.dumps({"prediction": pred_name, "confidence": round(confidence, 4)}))
+        print(json.dumps({
+            "prediction": pred_name,
+            "confidence": round(confidence, 4),
+            "detected_boxes": detected_boxes,
+        }))
     else:
         print(f"Prediction: {pred_name}")
         print(f"Confidence: {confidence:.4f}")
+        print(f"Detected Boxes: {len(detected_boxes)}")
+

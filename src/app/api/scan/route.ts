@@ -15,7 +15,7 @@ import { scanRateLimiter } from '@/lib/rateLimiter';
 import { sanitizeAndValidateImage } from '@/lib/security';
 import { scanDb } from '@/lib/dbPersistence';
 import { getScanCache, setScanCache } from '@/lib/scanPersistence';
-import { predictLocalDiseaseFromDataUrl } from '@/lib/localDiseaseModel';
+import { predictLocalDiseaseFromDataUrl, type LocalPredictionResult } from '@/lib/localDiseaseModel';
 import type {
   CropId,
   PlantPart,
@@ -52,6 +52,7 @@ interface ScanRequest {
   soilType?: SoilType;
   sensorInput?: SensorInput | null;
   trapInput?: PestTrapInput | null;
+  detectedBoxes?: BoundingBox[];
 }
 
 interface ScanSuccess {
@@ -327,78 +328,24 @@ export async function POST(request: Request) {
   const nvidiaKey = process.env.NVIDIA_API_KEY;
   const hasGemini = geminiKeyPool.hasKeys();
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const clientBoxes = normalizeBoundingBoxes(body.detectedBoxes);
 
   const localModelResult = await predictLocalDiseaseFromDataUrl(body.imageDataUrl, body.crop);
-  if (localModelResult) {
+  // High-confidence local inference (>= 0.65) is served immediately
+  if (localModelResult && localModelResult.confidence >= 0.65) {
     const localDisease = diseaseMap[localModelResult.diseaseId] ?? diseases.find((d) => d.id === localModelResult.diseaseId);
     if (localDisease && localDisease.crop === body.crop) {
-      const weatherRisk = computeWeatherRisk(
-        body.crop,
-        localDisease,
-        body.conditions ?? [],
-        body.weather ?? null,
-        {
-          cropStage: body.cropStage,
-          variety: body.variety,
-          soilType: body.soilType,
-          sensorInput: body.sensorInput,
-          trapInput: body.trapInput,
-        }
-      );
-      const plan = buildManagementPlan(localDisease, weatherRisk);
-      const fusion = calculateBayesianFusion({
-        visionConfidence: localModelResult.confidence,
-        weatherRisk,
-        sensorInput: body.sensorInput,
-        trapInput: body.trapInput,
-        crop: body.crop,
-        cropStage: body.cropStage,
-        soilType: body.soilType,
-        conditions: body.conditions,
-        detectedBoxes: [],
-      });
-
-      const scanRecord = scanDb.saveScanRecord({
-        crop: body.crop,
-        cropStage: body.cropStage,
-        soilType: body.soilType,
-        diseaseId: localDisease.id,
-        diseaseName: localDisease.name,
-        confidence: fusion.fusedConfidence,
-        fusedScore: fusion.fusedScore,
-        severity: localDisease.severity,
-        riskLevel: fusion.riskLevel,
-        provider: 'local_model',
-        district: body.district || body.state || undefined,
-        taluka: body.taluka || undefined,
-      });
-
-      return NextResponse.json(
-        {
-          ok: true,
-          scanId: scanRecord.id,
-          result: {
-            disease: localDisease,
-            aiConfidence: fusion.fusedConfidence,
-            aiReasoning: `Local TensorFlow model detected visual symptoms consistent with ${localDisease.name}. Confidence ${localModelResult.confidence.toFixed(2)}.`,
-            weatherRisk,
-            plan,
-            source: 'vision',
-            severity: localDisease.severity,
-            riskLevel: fusion.riskLevel,
-            followUpDays: plan.followUpDays,
-            provider: 'local_model',
-            detectedBoxes: [],
-            infectionGrade: fusion.infectionGrade,
-            fusion,
-          },
-        } satisfies ScanSuccess,
-        { status: 200 }
-      );
+      return buildLocalModelResponse(body, localDisease, localModelResult, clientBoxes);
     }
   }
 
   if (!hasGemini && !nvidiaKey && !anthropicKey) {
+    if (localModelResult) {
+      const localDisease = diseaseMap[localModelResult.diseaseId] ?? diseases.find((d) => d.id === localModelResult.diseaseId);
+      if (localDisease && localDisease.crop === body.crop) {
+        return buildLocalModelResponse(body, localDisease, localModelResult, clientBoxes);
+      }
+    }
     if (topLocal) {
       return buildEdgeFallbackResponse(body, topLocal);
     }
@@ -521,6 +468,13 @@ export async function POST(request: Request) {
               maxOutputTokens: 4096,
               responseMimeType: 'application/json',
             },
+            safetySettings: [
+              { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'BLOCK_NONE' },
+            ],
           }),
         });
 
@@ -567,7 +521,10 @@ export async function POST(request: Request) {
                 ? parsed.reasoning.trim()
                 : `AI detected symptoms consistent with ${disease.name}.`;
 
-            const detectedBoxes = normalizeBoundingBoxes(rawBoxes);
+            let detectedBoxes = normalizeBoundingBoxes(rawBoxes);
+            if (detectedBoxes.length === 0 && clientBoxes.length > 0) {
+              detectedBoxes = clientBoxes;
+            }
 
             // Compute weather risk & management plan
             const weatherRisk = computeWeatherRisk(
@@ -728,7 +685,10 @@ export async function POST(request: Request) {
                 ? parsed.reasoning.trim()
                 : `NVIDIA NIM Vision detected hallmarks of ${disease.name}.`;
 
-            const detectedBoxes = normalizeBoundingBoxes(rawBoxes);
+            let detectedBoxes = normalizeBoundingBoxes(rawBoxes);
+            if (detectedBoxes.length === 0 && clientBoxes.length > 0) {
+              detectedBoxes = clientBoxes;
+            }
 
             const weatherRisk = computeWeatherRisk(
               body.crop,
@@ -862,7 +822,10 @@ export async function POST(request: Request) {
 
           const aiConfidence = clamp01(Number(parsed.confidence) || 0.85);
           const aiReasoning = String(parsed.reasoning || `Detected hallmarks of ${disease.name}`);
-          const detectedBoxes = normalizeBoundingBoxes(parsed.detectedBoxes);
+          let detectedBoxes = normalizeBoundingBoxes(parsed.detectedBoxes);
+          if (detectedBoxes.length === 0 && clientBoxes.length > 0) {
+            detectedBoxes = clientBoxes;
+          }
 
           const weatherRisk = computeWeatherRisk(
             body.crop,
@@ -937,7 +900,89 @@ export async function POST(request: Request) {
   // ─────────────────────────────────────────────────────────────
   // 4. ROBUST RESILIENT EDGE BAYESIAN FALLBACK
   // ─────────────────────────────────────────────────────────────
+  if (localModelResult) {
+    const localDisease = diseaseMap[localModelResult.diseaseId] ?? diseases.find((d) => d.id === localModelResult.diseaseId);
+    if (localDisease && localDisease.crop === body.crop) {
+      return buildLocalModelResponse(body, localDisease, localModelResult, clientBoxes);
+    }
+  }
+
   return buildEdgeFallbackResponse(body, topLocal);
+}
+
+function buildLocalModelResponse(
+  body: ScanRequest,
+  localDisease: Disease,
+  localModelResult: LocalPredictionResult,
+  clientBoxes: BoundingBox[]
+) {
+  const detectedBoxes = localModelResult.detectedBoxes && localModelResult.detectedBoxes.length > 0
+    ? localModelResult.detectedBoxes
+    : clientBoxes;
+
+  const weatherRisk = computeWeatherRisk(
+    body.crop,
+    localDisease,
+    body.conditions ?? [],
+    body.weather ?? null,
+    {
+      cropStage: body.cropStage,
+      variety: body.variety,
+      soilType: body.soilType,
+      sensorInput: body.sensorInput,
+      trapInput: body.trapInput,
+    }
+  );
+  const plan = buildManagementPlan(localDisease, weatherRisk);
+  const fusion = calculateBayesianFusion({
+    visionConfidence: localModelResult.confidence,
+    weatherRisk,
+    sensorInput: body.sensorInput,
+    trapInput: body.trapInput,
+    crop: body.crop,
+    cropStage: body.cropStage,
+    soilType: body.soilType,
+    conditions: body.conditions,
+    detectedBoxes,
+  });
+
+  const scanRecord = scanDb.saveScanRecord({
+    crop: body.crop,
+    cropStage: body.cropStage,
+    soilType: body.soilType,
+    diseaseId: localDisease.id,
+    diseaseName: localDisease.name,
+    confidence: fusion.fusedConfidence,
+    fusedScore: fusion.fusedScore,
+    severity: localDisease.severity,
+    riskLevel: fusion.riskLevel,
+    provider: 'local_model',
+    district: body.district || body.state || undefined,
+    taluka: body.taluka || undefined,
+  });
+
+  return NextResponse.json(
+    {
+      ok: true,
+      scanId: scanRecord.id,
+      result: {
+        disease: localDisease,
+        aiConfidence: fusion.fusedConfidence,
+        aiReasoning: `Local ResNet-50 deep learning model classified foliar specimen as ${localDisease.name} (${Math.round(localModelResult.confidence * 100)}% visual confidence) with localized pathological lesion boundaries.`,
+        weatherRisk,
+        plan,
+        source: 'vision',
+        severity: localDisease.severity,
+        riskLevel: fusion.riskLevel,
+        followUpDays: plan.followUpDays,
+        provider: 'local_model',
+        detectedBoxes,
+        infectionGrade: fusion.infectionGrade,
+        fusion,
+      },
+    } satisfies ScanSuccess,
+    { status: 200 }
+  );
 }
 
 function clamp01(n: number): number {
@@ -976,6 +1021,7 @@ function buildEdgeFallbackResponse(
   topLocal: { disease: Disease; score: number }
 ) {
   const disease = topLocal.disease;
+  const clientBoxes = normalizeBoundingBoxes(body.detectedBoxes);
   const weatherRisk = computeWeatherRisk(
     body.crop,
     disease,
@@ -999,7 +1045,7 @@ function buildEdgeFallbackResponse(
     cropStage: body.cropStage,
     soilType: body.soilType,
     conditions: body.conditions,
-    detectedBoxes: [],
+    detectedBoxes: clientBoxes,
   });
 
   const scanRecord = scanDb.saveScanRecord({
@@ -1032,7 +1078,7 @@ function buildEdgeFallbackResponse(
         riskLevel: fusion.riskLevel,
         followUpDays: plan.followUpDays,
         provider: 'edge_heuristics',
-        detectedBoxes: [],
+        detectedBoxes: clientBoxes,
         infectionGrade: fusion.infectionGrade,
         fusion,
       },
