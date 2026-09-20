@@ -533,4 +533,65 @@ export async function detectVisualLesionBoxes(dataUrl: string): Promise<LesionBo
   }
 }
 
+/**
+ * Gray-World Color Constancy Algorithm:
+ * Neutralizes harsh sunlight glare or heavy overcast canopy shade casts.
+ * Balances RGB channels across foliar pixels toward an average gray anchor.
+ */
+export function normalizeFoliarIllumination(pixels: Uint8ClampedArray): Uint8ClampedArray {
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  let count = 0;
+
+  for (let i = 0; i < pixels.length; i += 4) {
+    const a = pixels[i + 3];
+    if (a < 128) continue;
+    sumR += pixels[i];
+    sumG += pixels[i + 1];
+    sumB += pixels[i + 2];
+    count++;
+  }
+
+  if (count === 0) return pixels;
+
+  const avgR = sumR / count;
+  const avgG = sumG / count;
+  const avgB = sumB / count;
+  const avgGray = (avgR + avgG + avgB) / 3;
+
+  const scaleR = avgR > 0 ? avgGray / avgR : 1;
+  const scaleG = avgG > 0 ? avgGray / avgG : 1;
+  const scaleB = avgB > 0 ? avgGray / avgB : 1;
+
+  const out = new Uint8ClampedArray(pixels.length);
+  for (let i = 0; i < pixels.length; i += 4) {
+    out[i] = Math.min(255, Math.max(0, Math.round(pixels[i] * scaleR)));
+    out[i + 1] = Math.min(255, Math.max(0, Math.round(pixels[i + 1] * scaleG)));
+    out[i + 2] = Math.min(255, Math.max(0, Math.round(pixels[i + 2] * scaleB)));
+    out[i + 3] = pixels[i + 3]; // Preserve alpha
+  }
+
+  return out;
+}
+
+/**
+ * Vegetative Leaf Mask Isolation:
+ * Identifies skin tones (hands holding the leaf) and soil/dark backgrounds,
+ * ensuring vision inference focuses strictly on vegetative foliar tissue.
+ */
+export function isVegetativePixel(r: number, g: number, b: number): boolean {
+  // Suppress human skin tones (R > G > B with R - G > 15)
+  if (r > 95 && g > 40 && b > 20 && r > g && r > b && (r - g) > 15 && Math.abs(r - g) > 15) {
+    return false; // Skin tone detected (farmer finger holding leaf)
+  }
+  // Suppress very dark soil / mulch / shadows
+  if (r < 25 && g < 25 && b < 25) {
+    return false;
+  }
+  // Plant vegetative foliage generally has strong green or chlorotic yellow/brown diseased components
+  return true;
+}
+
+
 

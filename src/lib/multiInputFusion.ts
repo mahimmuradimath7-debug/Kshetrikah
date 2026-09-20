@@ -6,7 +6,10 @@ import type {
   PestTrapInput,
   SensorInput,
   RiskLevel,
+  WeatherId,
+  Condition,
 } from '@/data/types';
+import { evaluateAgronomicPriors, type PriorEvaluationResult } from './agronomicPriors';
 
 export interface BoundingBox {
   x: number; // 0 - 100%
@@ -43,6 +46,7 @@ export interface MultiInputFusionResult {
   breakdown: FusionFactorBreakdown[];
   protocolSummary: string;
   reasons: string[];
+  agronomicPriors?: PriorEvaluationResult;
 }
 
 /**
@@ -141,6 +145,8 @@ export function calculateBayesianFusion(params: {
   conditions?: string[];
   detectedBoxes?: BoundingBox[];
   estimatedSurfacePercent?: number;
+  diseaseId?: string;
+  weather?: WeatherId | null;
 }): MultiInputFusionResult {
   const {
     visionConfidence,
@@ -153,6 +159,8 @@ export function calculateBayesianFusion(params: {
     conditions = [],
     detectedBoxes = [],
     estimatedSurfacePercent,
+    diseaseId,
+    weather,
   } = params;
 
   // 1. Vision Prior (w1 = 0.40)
@@ -189,6 +197,20 @@ export function calculateBayesianFusion(params: {
   const wSoil = 0.05;
   const rawSoil = getSoilVulnerability(soilType, conditions);
 
+  // 6. Agronomic Prior Gating (Biological & Meteorological Constraints)
+  let agronomicEvaluation: PriorEvaluationResult | undefined;
+  let priorMultiplier = 1.0;
+  if (diseaseId) {
+    agronomicEvaluation = evaluateAgronomicPriors({
+      diseaseId,
+      cropStage: cropStage ?? undefined,
+      weather: weather ?? undefined,
+      conditions: conditions as Condition[],
+      sensorInput,
+    });
+    priorMultiplier = agronomicEvaluation.priorMultiplier;
+  }
+
   // Weighted fusion calculation
   const weightedSum =
     rawVision * wVision +
@@ -200,11 +222,18 @@ export function calculateBayesianFusion(params: {
   const totalWeights = wVision + wWeather + wTrap + wPhenology + wSoil;
   const fusedScore = Math.max(0, Math.min(1, weightedSum / totalWeights));
 
-  // Fused confidence (Bayesian updated confidence considering telemetry agreement)
-  const agreementBonus = Math.abs(rawVision - rawWeather) < 0.25 ? 0.06 : -0.04;
+  // Fused confidence (Bayesian updated confidence considering telemetry agreement & agronomic priors)
+  const agreementBonus = Math.abs(rawVision - rawWeather) < 0.25 ? 0.04 : -0.02;
+  let baseConfidence = rawVision * 0.85 + (fusedScore * 0.15) + agreementBonus;
+  if (priorMultiplier < 0.2) {
+    baseConfidence *= priorMultiplier; // Hard agronomic impossibility penalty
+  } else {
+    // Proportional prior adjustment: modulates based on microclimate and phenology (+/- 10%)
+    baseConfidence = baseConfidence + (priorMultiplier - 1.0) * 0.12;
+  }
   const fusedConfidence = Math.max(
-    0.6,
-    Math.min(0.99, rawVision * 0.7 + fusedScore * 0.3 + agreementBonus)
+    0.1,
+    Math.min(0.99, Math.round(baseConfidence * 1000) / 1000)
   );
 
   // Risk Level determination
@@ -293,6 +322,13 @@ export function calculateBayesianFusion(params: {
   if (infectionGrade.grade === 3) {
     reasons.push(`Canopy surface involvement (${infectionGrade.surfacePercent}%) triggers Grade 3 emergency protocol.`);
   }
+  if (agronomicEvaluation) {
+    if (!agronomicEvaluation.isBiologicallyPossible) {
+      reasons.unshift(`Agronomic Alert: ${agronomicEvaluation.agronomicReasoning}`);
+    } else if (agronomicEvaluation.stageCompatibility === 'optimal') {
+      reasons.push(`Phenology Validation: ${agronomicEvaluation.agronomicReasoning}`);
+    }
+  }
 
   return {
     fusedScore,
@@ -302,5 +338,6 @@ export function calculateBayesianFusion(params: {
     breakdown,
     protocolSummary: infectionGrade.actionProtocol,
     reasons,
+    agronomicPriors: agronomicEvaluation,
   };
 }

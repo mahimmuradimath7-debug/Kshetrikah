@@ -17,6 +17,16 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
+# If a YOLO model (.pt or .onnx) is requested, forward immediately to yolo_inference.py
+if any(arg.endswith('.pt') or arg.endswith('.onnx') for arg in sys.argv):
+    yolo_script = Path(__file__).resolve().parent.parent / "scripts" / "yolo_inference.py"
+    if yolo_script.exists():
+        res = subprocess.run([sys.executable, str(yolo_script)] + sys.argv[1:], capture_output=True, text=True)
+        print(res.stdout, end="")
+        if res.stderr:
+            print(res.stderr, file=sys.stderr, end="")
+        sys.exit(res.returncode)
+
 try:
     import numpy as np
     from PIL import Image

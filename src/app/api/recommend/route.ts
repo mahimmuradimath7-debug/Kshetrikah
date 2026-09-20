@@ -11,14 +11,23 @@ export const runtime = 'nodejs';
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Record<string, unknown>;
-    const type = String(body.type ?? body.action ?? '').toLowerCase();
+    let type = String(body.type ?? body.action ?? '').toLowerCase();
+    
+    // Auto-detect type if omitted
+    if (!type) {
+      if (body.cropType || body.soilType || body.moisture !== undefined) {
+        type = 'fertilizer';
+      } else {
+        type = 'crop';
+      }
+    }
 
     if (type === 'crop') {
-      const payload = body as Partial<CropRecommendationInput>;
+      const payload = body as Record<string, unknown>;
       const result = recommendCropForSoil({
-        nitrogen: Number(payload.nitrogen ?? 0),
-        phosphorus: Number(payload.phosphorus ?? 0),
-        potassium: Number(payload.potassium ?? 0),
+        nitrogen: Number(payload.nitrogen ?? payload.N ?? 0),
+        phosphorus: Number(payload.phosphorus ?? payload.P ?? payload.phosphorous ?? 0),
+        potassium: Number(payload.potassium ?? payload.K ?? 0),
         temperature: Number(payload.temperature ?? 0),
         humidity: Number(payload.humidity ?? 0),
         ph: Number(payload.ph ?? 0),
@@ -29,16 +38,16 @@ export async function POST(request: Request) {
     }
 
     if (type === 'fertilizer' || type === 'fertiliser') {
-      const payload = body as Partial<FertilizerRecommendationInput>;
+      const payload = body as Record<string, unknown>;
       const result = recommendFertilizerForField({
         temperature: Number(payload.temperature ?? 0),
         humidity: Number(payload.humidity ?? 0),
         moisture: Number(payload.moisture ?? 0),
         soilType: String(payload.soilType ?? ''),
         cropType: String(payload.cropType ?? ''),
-        nitrogen: Number(payload.nitrogen ?? 0),
-        potassium: Number(payload.potassium ?? 0),
-        phosphorous: Number(payload.phosphorous ?? 0),
+        nitrogen: Number(payload.nitrogen ?? payload.N ?? 0),
+        potassium: Number(payload.potassium ?? payload.K ?? 0),
+        phosphorous: Number(payload.phosphorous ?? payload.phosphorus ?? payload.P ?? 0),
       });
 
       return NextResponse.json({ ok: true, result });

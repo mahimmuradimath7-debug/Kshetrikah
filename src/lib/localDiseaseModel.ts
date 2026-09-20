@@ -10,19 +10,22 @@ const execFileAsync = promisify(execFile);
 
 const repoRoot = path.resolve(process.cwd());
 const modelCandidates = [
-  path.join(repoRoot, 'artifacts', 'resnet50_crop_disease.keras'),
-  path.join(repoRoot, 'artifacts', 'resnet50_crop_disease_subset.keras'),
-  path.join(repoRoot, 'Crop-Disease-Detection-main', 'artifacts', 'resnet50_crop_disease.keras'),
+  path.join(repoRoot, 'artifacts', 'crop_disease_yolo.onnx'),
+  path.join(repoRoot, 'artifacts', 'best.onnx'),
+  path.join(repoRoot, 'artifacts', 'best.pt'),
 ];
 
 function getPythonExecutable(): string {
   if (process.env.PYTHON_PATH && fs.existsSync(process.env.PYTHON_PATH)) {
     return process.env.PYTHON_PATH;
   }
+  const home = os.homedir();
   const candidates = [
-    '/usr/bin/python3',
-    '/usr/local/bin/python3',
+    path.join(home, 'miniconda3', 'bin', 'python3'),
+    path.join(home, 'anaconda3', 'bin', 'python3'),
     '/opt/homebrew/bin/python3',
+    '/usr/local/bin/python3',
+    '/usr/bin/python3',
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
@@ -39,6 +42,8 @@ function getModelPath(): string | null {
 
 function getClassNamesPath(modelPath: string): string | null {
   const candidates = [
+    path.join(repoRoot, 'artifacts', 'yolo_classes.txt'),
+    path.join(repoRoot, 'artifacts', 'crop_disease_classes.txt'),
     path.join(path.dirname(modelPath), 'resnet50_crop_disease_classes.txt'),
     path.join(repoRoot, 'artifacts', 'resnet50_crop_disease_classes.txt'),
     path.join(repoRoot, 'Crop-Disease-Detection-main', 'artifacts', 'resnet50_crop_disease_classes.txt'),
@@ -141,12 +146,22 @@ const CROP_FALLBACK_MAP: Record<string, Record<string, string>> = {
     'healthy': 'maize-fall-armyworm',
   },
   cotton: {
+    'bacterial blight': 'cotton-boll-rot',
+    'curl virus': 'cotton-leaf-curl-virus',
+    'leaf hopper': 'cotton-pink-bollworm',
+    'jassids': 'cotton-pink-bollworm',
+    'redding': 'cotton-pink-bollworm',
+    'pink bollworm': 'cotton-pink-bollworm',
+    'boll rot': 'cotton-boll-rot',
     'healthy': 'cotton-pink-bollworm',
   },
   sugarcane: {
+    'red rot': 'sugarcane-red-rot',
     'bacterial blight': 'sugarcane-red-rot',
     'red stripe': 'sugarcane-red-rot',
     'rust': 'sugarcane-red-rot',
+    'top borer': 'sugarcane-top-borer',
+    'pyrilla': 'sugarcane-pyrilla',
     'healthy': 'sugarcane-red-rot',
   },
   chili: {
@@ -154,6 +169,8 @@ const CROP_FALLBACK_MAP: Record<string, Record<string, string>> = {
     'yellowish': 'chili-leaf-curl-virus',
     'leaf spot': 'chili-fruit-rot',
     'leaf curl': 'chili-leaf-curl-virus',
+    'thrips': 'chili-thrips',
+    'fruit rot': 'chili-fruit-rot',
     'healthy': 'chili-fruit-rot',
   },
 };
@@ -243,7 +260,10 @@ export async function predictLocalDiseaseFromDataUrl(
     fs.writeFileSync(tempPath, buffer);
 
     const pythonBin = getPythonExecutable();
-    const scriptPath = path.join(repoRoot, 'Crop-Disease-Detection-main', 'resnet50_inference.py');
+    const isYolo = modelPath.endsWith('.pt') || modelPath.endsWith('.onnx');
+    const scriptPath = isYolo
+      ? path.join(repoRoot, 'scripts', 'yolo_inference.py')
+      : path.join(repoRoot, 'Crop-Disease-Detection-main', 'resnet50_inference.py');
     const args = [
       scriptPath,
       '--model_path', modelPath,

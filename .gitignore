@@ -81,6 +81,8 @@ coverage.xml
 data/Datasets/
 data/merged_dataset/
 data/clean_trainable/
+data/training_multicrop/
+yolo_dataset/
 data/raw/
 data/archive*/
 data/scans_wal.json
@@ -106,6 +108,9 @@ Crop-Disease-Detection-main/artifacts/
 
 # Keep model label maps and class text files tracked
 !artifacts/resnet50_crop_disease_classes.txt
+!artifacts/yolo_classes.txt
+!artifacts/yolo_training_summary.json
+
 
 # --- Temporary & Scratch Directories ---
 scratch/

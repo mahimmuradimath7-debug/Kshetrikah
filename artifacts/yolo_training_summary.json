@@ -1,0 +1,13 @@
+{
+  "model": "yolov8n-cls.pt",
+  "classes_count": 34,
+  "train_samples": 8332,
+  "val_samples": 2086,
+  "epochs": 10,
+  "device": "mps",
+  "metrics": {
+    "metrics/accuracy_top1": 0.9266538619995117,
+    "metrics/accuracy_top5": 0.9990411996841431,
+    "fitness": 0.9628475308418274
+  }
+}

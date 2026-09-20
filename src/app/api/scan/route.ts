@@ -331,13 +331,6 @@ export async function POST(request: Request) {
   const clientBoxes = normalizeBoundingBoxes(body.detectedBoxes);
 
   const localModelResult = await predictLocalDiseaseFromDataUrl(body.imageDataUrl, body.crop);
-  // High-confidence local inference (>= 0.65) is served immediately
-  if (localModelResult && localModelResult.confidence >= 0.65) {
-    const localDisease = diseaseMap[localModelResult.diseaseId] ?? diseases.find((d) => d.id === localModelResult.diseaseId);
-    if (localDisease && localDisease.crop === body.crop) {
-      return buildLocalModelResponse(body, localDisease, localModelResult, clientBoxes);
-    }
-  }
 
   if (!hasGemini && !nvidiaKey && !anthropicKey) {
     if (localModelResult) {
@@ -542,9 +535,18 @@ export async function POST(request: Request) {
             );
             const plan = buildManagementPlan(disease, weatherRisk);
 
-            // Bayesian Multi-Input Fusion
+            // Multimodal Consensus Ensembling:
+            // Check if local deep-learning model also identified the same disease
+            let effectiveVisionConfidence = aiConfidence;
+            let finalReasoning = aiReasoning;
+            if (localModelResult && (localModelResult.diseaseId === disease.id || localModelResult.diseaseId.includes(disease.id))) {
+              effectiveVisionConfidence = Math.min(0.99, 1 - (1 - aiConfidence) * (1 - localModelResult.confidence));
+              finalReasoning = `[Dual-Model Consensus Verified] Both Multimodal Vision and Local Edge Deep Learning independently identified ${disease.name} (${Math.round(effectiveVisionConfidence * 100)}% visual consensus). ${aiReasoning}`;
+            }
+
+            // Bayesian Multi-Input Fusion with Agronomic Prior Gating
             const fusion = calculateBayesianFusion({
-              visionConfidence: aiConfidence,
+              visionConfidence: effectiveVisionConfidence,
               weatherRisk,
               sensorInput: body.sensorInput,
               trapInput: body.trapInput,
@@ -554,13 +556,15 @@ export async function POST(request: Request) {
               conditions: body.conditions,
               detectedBoxes,
               estimatedSurfacePercent: rawSurfacePercent,
+              diseaseId: disease.id,
+              weather: body.weather,
             });
 
             // Cache in memory for fast lookup
             setScanCache(base64, {
               diseaseId: disease.id,
               confidence: fusion.fusedConfidence,
-              reasoning: aiReasoning,
+              reasoning: finalReasoning,
               crop: body.crop,
               detectedBoxes,
               provider: 'gemini',
@@ -589,7 +593,7 @@ export async function POST(request: Request) {
                 result: {
                   disease,
                   aiConfidence: fusion.fusedConfidence,
-                  aiReasoning,
+                  aiReasoning: finalReasoning,
                   weatherRisk,
                   plan,
                   source: 'vision',
@@ -705,8 +709,15 @@ export async function POST(request: Request) {
             );
             const plan = buildManagementPlan(disease, weatherRisk);
 
+            let effectiveVisionConfidence = aiConfidence;
+            let finalReasoning = aiReasoning;
+            if (localModelResult && (localModelResult.diseaseId === disease.id || localModelResult.diseaseId.includes(disease.id))) {
+              effectiveVisionConfidence = Math.min(0.99, 1 - (1 - aiConfidence) * (1 - localModelResult.confidence));
+              finalReasoning = `[Dual-Model Consensus Verified] Both NVIDIA NIM Vision and Local Edge Deep Learning independently identified ${disease.name} (${Math.round(effectiveVisionConfidence * 100)}% visual consensus). ${aiReasoning}`;
+            }
+
             const fusion = calculateBayesianFusion({
-              visionConfidence: aiConfidence,
+              visionConfidence: effectiveVisionConfidence,
               weatherRisk,
               sensorInput: body.sensorInput,
               trapInput: body.trapInput,
@@ -716,12 +727,14 @@ export async function POST(request: Request) {
               conditions: body.conditions,
               detectedBoxes,
               estimatedSurfacePercent: rawSurfacePercent,
+              diseaseId: disease.id,
+              weather: body.weather,
             });
 
             setScanCache(base64, {
               diseaseId: disease.id,
               confidence: fusion.fusedConfidence,
-              reasoning: aiReasoning,
+              reasoning: finalReasoning,
               crop: body.crop,
               detectedBoxes,
               provider: 'nvidia',
@@ -749,7 +762,7 @@ export async function POST(request: Request) {
                 result: {
                   disease,
                   aiConfidence: fusion.fusedConfidence,
-                  aiReasoning,
+                  aiReasoning: finalReasoning,
                   weatherRisk,
                   plan,
                   source: 'vision',
@@ -944,6 +957,8 @@ function buildLocalModelResponse(
     soilType: body.soilType,
     conditions: body.conditions,
     detectedBoxes,
+    diseaseId: localDisease.id,
+    weather: body.weather,
   });
 
   const scanRecord = scanDb.saveScanRecord({
@@ -1046,6 +1061,8 @@ function buildEdgeFallbackResponse(
     soilType: body.soilType,
     conditions: body.conditions,
     detectedBoxes: clientBoxes,
+    diseaseId: disease.id,
+    weather: body.weather,
   });
 
   const scanRecord = scanDb.saveScanRecord({

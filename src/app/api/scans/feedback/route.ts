@@ -8,12 +8,15 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const scanId = sanitizeString(body?.scanId || '', 64);
-    const feedback = body?.feedback;
-    const note = sanitizeString(body?.note || '', 500);
+    let feedback = body?.feedback;
+    if (!feedback && typeof body?.isHelpful === 'boolean') {
+      feedback = body.isHelpful ? 'confirmed' : 'disputed';
+    }
+    const note = sanitizeString(body?.note || body?.feedbackNote || '', 500);
 
     if (!scanId || (feedback !== 'confirmed' && feedback !== 'disputed')) {
       return NextResponse.json(
-        { ok: false, error: 'scanId and valid feedback (confirmed/disputed) are required' },
+        { ok: false, error: 'scanId and valid feedback (confirmed/disputed or isHelpful) are required' },
         { status: 400 }
       );
     }
