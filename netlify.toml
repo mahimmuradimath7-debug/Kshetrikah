@@ -4,14 +4,16 @@
 
 [build]
   command = "npm run build"
-  publish = ".next"
+  # Note: Do not specify 'publish = ".next"' here.
+  # The @netlify/plugin-nextjs runtime automatically manages the output directory.
 
-# Official Netlify Next.js Runtime (App Router, Server Actions, API routes, Middleware)
+# Official Netlify Next.js Runtime (App Router, API routes, Middleware)
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
 [build.environment]
   NODE_VERSION = "20"
+  NPM_FLAGS = "--legacy-peer-deps"
 
 # Security and caching headers
 [[headers]]
