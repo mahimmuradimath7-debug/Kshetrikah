@@ -1,0 +1,117 @@
+Apple Black Rot
+Apple Cedar Apple Rust
+Apple Healthy
+Apple Rotten
+Apple Scab
+Banana Healthy
+Banana Rotten
+Bell Pepper Bacterial Spot
+Bell Pepper Healthy
+Bell Pepper Rotten
+Carrot Healthy
+Carrot Rotten
+Cashew Anthracnose
+Cashew Gumosis
+Cashew Healthy
+Cashew Leaf Miner
+Cashew Red Rust
+Cassava Bacterial Blight
+Cassava Brown Spot
+Cassava Brown Streak Disease
+Cassava Green Mite
+Cassava Green Mottle
+Cassava Healthy
+Cassava Mosaic Disease
+Cherry Healthy
+Cherry Powdery Mildew
+Chili Healthy
+Chili Leaf Curl
+Chili Leaf Spot
+Chili Whitefly
+Chili Yellowish
+Coffee Cercospora Leaf Spot
+Coffee Healthy
+Coffee Red Spider Mite
+Coffee Rust
+Corn Common Rust
+Corn Fall Armyworm
+Corn Grasshopper
+Corn Gray Leaf Spot
+Corn Healthy
+Corn Leaf Beetle
+Corn Northern Leaf Blight
+Corn Streak Virus
+Cucumber Diseased
+Cucumber Healthy
+Cucumber Rotten
+Grape Black Measles
+Grape Black Rot
+Grape Healthy
+Grape Leaf Blight
+Grape Rotten
+Guava Diseased
+Guava Healthy
+Guava Rotten
+Jamun Diseased
+Jamun Healthy
+Jujube Healthy
+Jujube Rotten
+Lemon Diseased
+Lemon Healthy
+Mango Diseased
+Mango Healthy
+Mango Rotten
+Orange Healthy
+Orange Rotten
+Peach Bacterial Spot
+Peach Healthy
+Pomegranate Diseased
+Pomegranate Healthy
+Pomegranate Rotten
+Potato Early Blight
+Potato Healthy
+Potato Late Blight
+Potato Rotten
+Rice Blast
+Rice Brown Spot
+Rice Healthy
+Rice Hispa
+Soybean Bacterial Blight
+Soybean Caterpillar
+Soybean Diabrotica Speciosa
+Soybean Downy Mildew
+Soybean Healthy
+Soybean Mosaic Virus
+Soybean Powdery Mildew
+Soybean Rust
+Soybean Southern Blight
+Strawberry Healthy
+Strawberry Leaf Scorch
+Strawberry Rotten
+Sugarcane Bacterial Blight
+Sugarcane Healthy
+Sugarcane Red Rot
+Sugarcane Red Stripe
+Sugarcane Rust
+Tea Algal Leaf
+Tea Anthracnose
+Tea Bird Eye Spot
+Tea Brown Blight
+Tea Healthy
+Tea Red Leaf Spot
+Tomato Bacterial Spot
+Tomato Early Blight
+Tomato Healthy
+Tomato Late Blight
+Tomato Leaf Mold
+Tomato Mosaic Virus
+Tomato Rotten
+Tomato Septoria Leaf Spot
+Tomato Spider Mites
+Tomato Target Spot
+Tomato Verticulium Wilt
+Tomato Yellow Leaf Curl Virus
+Wheat Brown Rust
+Wheat Healthy
+Wheat Septoria
+Wheat Yellow Rust

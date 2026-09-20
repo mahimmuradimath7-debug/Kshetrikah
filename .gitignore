@@ -1,0 +1,131 @@
+# =================================================================
+# KSHETRIKAH (क्षेत्रिकः) - .gitignore
+# =================================================================
+
+# --- Next.js & Node Dependencies ---
+/node_modules
+/.pnp
+.pnp.js
+/.next/
+/out/
+/build
+/dist
+
+# --- Environment & Security Credentials ---
+.env
+.env*.local
+.env.production
+.env.staging
+!.env.example
+*.pem
+
+# --- Logs & Debugging ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
+
+# --- TypeScript ---
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Vercel & Deployment Metadata ---
+.vercel
+
+# --- Python & ML Environments ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing & Notebooks
+.coverage
+.coverage.*
+coverage/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+.ipynb_checkpoints
+
+# --- Heavy Datasets & Raw Images (~10 GB) ---
+# Raw image datasets must be excluded from Git version control
+data/Datasets/
+data/merged_dataset/
+data/clean_trainable/
+data/raw/
+data/archive*/
+data/scans_wal.json
+
+# Archive formats
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.rar
+*.7z
+
+# --- Large ML Model Binaries (>100MB GitHub limit) ---
+artifacts/*.keras
+artifacts/*.h5
+artifacts/*.tflite
+artifacts/*.pt
+artifacts/*.pth
+artifacts/*.onnx
+artifacts/*.pb
+artifacts/variables/
+Crop-Disease-Detection-main/artifacts/
+
+# Keep model label maps and class text files tracked
+!artifacts/resnet50_crop_disease_classes.txt
+
+# --- Temporary & Scratch Directories ---
+scratch/
+tmp/
+*.tmp
+*.temp
+
+# --- Operating System & Editor Files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.sublime-workspace
+*.sublime-project
