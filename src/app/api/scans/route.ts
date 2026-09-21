@@ -14,16 +14,17 @@ export async function GET(request: Request) {
     const feedback = searchParams.get('feedback') || undefined;
     const limit = parseInt(searchParams.get('limit') || '50', 10);
 
-    const scans = scanDb.getRecentScans({
-      crop,
-      district,
-      severity,
-      kvkStatus,
-      feedback,
-      limit,
-    });
-
-    const metrics = scanDb.getStorageMetrics();
+    const [scans, metrics] = await Promise.all([
+      scanDb.getRecentScans({
+        crop,
+        district,
+        severity,
+        kvkStatus,
+        feedback,
+        limit,
+      }),
+      scanDb.getStorageMetrics(),
+    ]);
 
     return NextResponse.json({
       ok: true,
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
       const saved: PersistentScanRecord[] = [];
       for (const item of body.scans) {
         if (item.crop && item.diseaseId) {
-          const record = scanDb.saveScanRecord(item);
+          const record = await scanDb.saveScanRecord(item);
           saved.push(record);
         }
       }
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const record = scanDb.saveScanRecord(body);
+    const record = await scanDb.saveScanRecord(body);
     return NextResponse.json({ ok: true, record }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';

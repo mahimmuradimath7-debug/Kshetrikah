@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const success = scanDb.recordScanFeedback(scanId, feedback, note);
+    const success = await scanDb.recordScanFeedback(scanId, feedback, note);
 
     return NextResponse.json({
       ok: true,

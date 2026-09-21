@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const radius = searchParams.get('radius') ? parseInt(searchParams.get('radius')!, 10) : 15;
     const minIncidents = searchParams.get('min') ? parseInt(searchParams.get('min')!, 10) : 3;
 
-    const recentScans = scanDb.getRecentScans({ limit: 200 });
+    const recentScans = await scanDb.getRecentScans({ limit: 200 });
 
     const clusters = computeOutbreakClusters({
       crop,

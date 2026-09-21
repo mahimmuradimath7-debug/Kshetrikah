@@ -16,7 +16,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'scanId is required' }, { status: 400 });
     }
 
-    const updated = scanDb.recordScanDispute(scanId, reason, {
+    const updated = await scanDb.recordScanDispute(scanId, reason, {
       name: farmerName,
       contact: farmerContact,
     });

@@ -275,7 +275,7 @@ export async function POST(request: Request) {
         detectedBoxes: cachedHit.detectedBoxes,
       });
 
-      const scanRecord = scanDb.saveScanRecord({
+      const scanRecord = await scanDb.saveScanRecord({
         crop: body.crop,
         cropStage: body.cropStage,
         soilType: body.soilType,
@@ -571,7 +571,7 @@ export async function POST(request: Request) {
             });
 
             // Save to persistent WAL database
-            const scanRecord = scanDb.saveScanRecord({
+            const scanRecord = await scanDb.saveScanRecord({
               crop: body.crop,
               cropStage: body.cropStage,
               soilType: body.soilType,
@@ -740,7 +740,7 @@ export async function POST(request: Request) {
               provider: 'nvidia',
             });
 
-            const scanRecord = scanDb.saveScanRecord({
+            const scanRecord = await scanDb.saveScanRecord({
               crop: body.crop,
               cropStage: body.cropStage,
               soilType: body.soilType,
@@ -866,7 +866,7 @@ export async function POST(request: Request) {
             detectedBoxes,
           });
 
-          const scanRecord = scanDb.saveScanRecord({
+          const scanRecord = await scanDb.saveScanRecord({
             crop: body.crop,
             cropStage: body.cropStage,
             soilType: body.soilType,
@@ -916,14 +916,14 @@ export async function POST(request: Request) {
   if (localModelResult) {
     const localDisease = diseaseMap[localModelResult.diseaseId] ?? diseases.find((d) => d.id === localModelResult.diseaseId);
     if (localDisease && localDisease.crop === body.crop) {
-      return buildLocalModelResponse(body, localDisease, localModelResult, clientBoxes);
+      return await buildLocalModelResponse(body, localDisease, localModelResult, clientBoxes);
     }
   }
 
-  return buildEdgeFallbackResponse(body, topLocal);
+  return await buildEdgeFallbackResponse(body, topLocal);
 }
 
-function buildLocalModelResponse(
+async function buildLocalModelResponse(
   body: ScanRequest,
   localDisease: Disease,
   localModelResult: LocalPredictionResult,
@@ -961,7 +961,7 @@ function buildLocalModelResponse(
     weather: body.weather,
   });
 
-  const scanRecord = scanDb.saveScanRecord({
+  const scanRecord = await scanDb.saveScanRecord({
     crop: body.crop,
     cropStage: body.cropStage,
     soilType: body.soilType,
@@ -1031,7 +1031,7 @@ function safeParseJson(text: string): {
   }
 }
 
-function buildEdgeFallbackResponse(
+async function buildEdgeFallbackResponse(
   body: ScanRequest,
   topLocal: { disease: Disease; score: number }
 ) {
@@ -1065,7 +1065,7 @@ function buildEdgeFallbackResponse(
     weather: body.weather,
   });
 
-  const scanRecord = scanDb.saveScanRecord({
+  const scanRecord = await scanDb.saveScanRecord({
     crop: body.crop,
     cropStage: body.cropStage,
     soilType: body.soilType,

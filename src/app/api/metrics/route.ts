@@ -10,8 +10,11 @@ export async function GET(request: Request) {
   const format = searchParams.get('format') || 'json';
 
   const pool = geminiKeyPool.getMetrics();
-  const db = scanDb.getStorageMetrics();
-  const clusters = computeOutbreakClusters({ recentScans: scanDb.getRecentScans({ limit: 200 }) });
+  const [db, recentScans] = await Promise.all([
+    scanDb.getStorageMetrics(),
+    scanDb.getRecentScans({ limit: 200 }),
+  ]);
+  const clusters = computeOutbreakClusters({ recentScans });
   const mem = process.memoryUsage();
 
 

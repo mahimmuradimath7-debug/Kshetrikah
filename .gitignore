@@ -96,6 +96,7 @@ data/scans_wal.json
 *.7z
 
 # --- Large ML Model Binaries (>100MB GitHub limit) ---
+*.pt
 artifacts/*.keras
 artifacts/*.h5
 artifacts/*.tflite
@@ -117,6 +118,7 @@ scratch/
 tmp/
 *.tmp
 *.temp
+runs/
 
 # --- Operating System & Editor Files ---
 .DS_Store

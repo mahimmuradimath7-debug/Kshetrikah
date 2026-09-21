@@ -9,7 +9,7 @@ const START_TIME = Date.now();
 export async function GET() {
   const uptimeSeconds = Math.floor((Date.now() - START_TIME) / 1000);
   const poolMetrics = geminiKeyPool.getMetrics();
-  const storageMetrics = scanDb.getStorageMetrics();
+  const storageMetrics = await scanDb.getStorageMetrics();
   const mem = process.memoryUsage();
 
   const nvidiaConfigured = Boolean(process.env.NVIDIA_API_KEY && process.env.NVIDIA_API_KEY.length > 8);
