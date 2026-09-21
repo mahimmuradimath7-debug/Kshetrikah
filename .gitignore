@@ -78,7 +78,9 @@ coverage.xml
 
 # --- Heavy Datasets & Raw Images (~10 GB) ---
 # Raw image datasets must be excluded from Git version control
-data/Datasets/
+data/Datasets/*
+!data/Datasets/Crop_recommendation.csv
+!data/Datasets/Fertilizer_recommendation.csv
 data/merged_dataset/
 data/clean_trainable/
 data/training_multicrop/

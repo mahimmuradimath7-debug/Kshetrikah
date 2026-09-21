@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import defaultCropData from '@/data/cropRecommendationData.json';
+import defaultFertilizerData from '@/data/fertilizerRecommendationData.json';
 
 export interface CropRecommendationInput {
   nitrogen: number;
@@ -57,9 +59,8 @@ type FertilizerCsvRow = {
   'Fertilizer Name': string;
 };
 
-function readCsvFile(relativePath: string): string {
-  return readFileSync(path.join(process.cwd(), relativePath), 'utf8');
-}
+let cachedCropDataset: CropCsvRow[] | null = null;
+let cachedFertilizerDataset: FertilizerCsvRow[] | null = null;
 
 function parseCsvRows(csvText: string): string[][] {
   const lines = csvText
@@ -100,7 +101,7 @@ function normalizeKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
-function parseNumber(value: string | undefined): number {
+function parseNumber(value: string | number | undefined): number {
   const parsed = Number(value ?? '');
   return Number.isFinite(parsed) ? parsed : 0;
 }
@@ -129,55 +130,85 @@ function computeEuclideanDistance(a: number[], b: number[]): number {
 }
 
 function getCropDataset(): CropCsvRow[] {
-  const rows = parseCsvRows(readCsvFile('data/Datasets/Crop_recommendation.csv'));
-  if (rows.length < 2) return [];
+  if (cachedCropDataset && cachedCropDataset.length > 0) {
+    return cachedCropDataset;
+  }
 
-  const headers = rows[0].map(normalizeKey);
-  return rows.slice(1).map((row) => {
-    const entry: Record<string, string> = {};
-    headers.forEach((header, index) => {
-      entry[header] = row[index] ?? '';
-    });
+  try {
+    const csvPath = path.join(process.cwd(), 'data/Datasets/Crop_recommendation.csv');
+    if (existsSync(csvPath)) {
+      const rows = parseCsvRows(readFileSync(csvPath, 'utf8'));
+      if (rows.length >= 2) {
+        const headers = rows[0].map(normalizeKey);
+        cachedCropDataset = rows.slice(1).map((row) => {
+          const entry: Record<string, string> = {};
+          headers.forEach((header, index) => {
+            entry[header] = row[index] ?? '';
+          });
 
-    return {
-      N: parseNumber(entry.n),
-      P: parseNumber(entry.p),
-      K: parseNumber(entry.k),
-      temperature: parseNumber(entry.temperature),
-      humidity: parseNumber(entry.humidity),
-      ph: parseNumber(entry.ph),
-      rainfall: parseNumber(entry.rainfall),
-      label: (entry.label ?? '').trim().toLowerCase(),
-    };
-  });
+          return {
+            N: parseNumber(entry.n),
+            P: parseNumber(entry.p),
+            K: parseNumber(entry.k),
+            temperature: parseNumber(entry.temperature),
+            humidity: parseNumber(entry.humidity),
+            ph: parseNumber(entry.ph),
+            rainfall: parseNumber(entry.rainfall),
+            label: (entry.label ?? '').trim().toLowerCase(),
+          };
+        });
+        return cachedCropDataset;
+      }
+    }
+  } catch {
+    // Fallback to embedded dataset in serverless environments
+  }
+
+  cachedCropDataset = defaultCropData as CropCsvRow[];
+  return cachedCropDataset;
 }
 
 function getFertilizerDataset(): FertilizerCsvRow[] {
-  const rows = parseCsvRows(readCsvFile('data/Datasets/Fertilizer_recommendation.csv'));
-  if (rows.length < 2) return [];
+  if (cachedFertilizerDataset && cachedFertilizerDataset.length > 0) {
+    return cachedFertilizerDataset;
+  }
 
-  const headers = rows[0].map((header) => header.trim());
-  return rows.slice(1).map((row) => {
-    const entry: Record<string, string> = {};
-    headers.forEach((header, index) => {
-      entry[header] = row[index] ?? '';
-    });
+  try {
+    const csvPath = path.join(process.cwd(), 'data/Datasets/Fertilizer_recommendation.csv');
+    if (existsSync(csvPath)) {
+      const rows = parseCsvRows(readFileSync(csvPath, 'utf8'));
+      if (rows.length >= 2) {
+        const headers = rows[0].map((header) => header.trim());
+        cachedFertilizerDataset = rows.slice(1).map((row) => {
+          const entry: Record<string, string> = {};
+          headers.forEach((header, index) => {
+            entry[header] = row[index] ?? '';
+          });
 
-    const soilType = (entry['Soil Type'] ?? '').trim();
-    const cropType = (entry['Crop Type'] ?? '').trim();
+          const soilType = (entry['Soil Type'] ?? '').trim();
+          const cropType = (entry['Crop Type'] ?? '').trim();
 
-    return {
-      Temparature: parseNumber(entry['Temparature']),
-      Humidity: parseNumber(entry['Humidity ']),
-      Moisture: parseNumber(entry['Moisture']),
-      'Soil Type': soilType,
-      'Crop Type': cropType,
-      Nitrogen: parseNumber(entry['Nitrogen']),
-      Potassium: parseNumber(entry['Potassium']),
-      Phosphorous: parseNumber(entry['Phosphorous']),
-      'Fertilizer Name': (entry['Fertilizer Name'] ?? '').trim(),
-    };
-  });
+          return {
+            Temparature: parseNumber(entry['Temparature']),
+            Humidity: parseNumber(entry['Humidity ']),
+            Moisture: parseNumber(entry['Moisture']),
+            'Soil Type': soilType,
+            'Crop Type': cropType,
+            Nitrogen: parseNumber(entry['Nitrogen']),
+            Potassium: parseNumber(entry['Potassium']),
+            Phosphorous: parseNumber(entry['Phosphorous']),
+            'Fertilizer Name': (entry['Fertilizer Name'] ?? '').trim(),
+          };
+        });
+        return cachedFertilizerDataset;
+      }
+    }
+  } catch {
+    // Fallback to embedded dataset in serverless environments
+  }
+
+  cachedFertilizerDataset = defaultFertilizerData as FertilizerCsvRow[];
+  return cachedFertilizerDataset;
 }
 
 export function recommendCropForSoil(input: CropRecommendationInput): CropRecommendationResult {
