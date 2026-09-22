@@ -1389,7 +1389,12 @@ function Results({
     doc.setFont("helvetica", "bold");
     doc.text("Diagnostic Confidence:", 18, textY);
     doc.setFont("helvetica", "normal");
-    doc.text(`${topScore}% (${aiInfo?.source === "vision" ? "ResNet50 Vision + Sensor Fusion" : "Bayesian Multi-Pillar Engine"})`, 58, textY);
+    const confidenceLabel = aiInfo?.source === "vision"
+      ? "YOLO11s-cls Edge AI + Bayesian Sensor Fusion"
+      : aiInfo?.source === "fallback"
+      ? "Bayesian Multi-Pillar Heuristic Engine"
+      : "YOLO11s-cls + Gemini Vision + Bayesian Fusion";
+    doc.text(`${topScore}% (${confidenceLabel})`, 58, textY);
 
     textY += 6;
     doc.setFont("helvetica", "bold");

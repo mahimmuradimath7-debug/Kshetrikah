@@ -45,7 +45,7 @@ export async function GET() {
         },
         edgeHeuristicBayesian: {
           status: 'online',
-          benchmark: 'ResNet-50 PlantVillage 96.24% Baseline',
+          benchmark: 'YOLO11s-cls 95.79% Top-1 / 99.86% Top-5 (18,250 Indian Field Images)',
         },
       },
       storage: {
