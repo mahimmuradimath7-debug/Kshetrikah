@@ -39,9 +39,12 @@ function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: n
 
 function classifyPixel(r: number, g: number, b: number): 'green' | 'yellow' | 'brown' | 'white' | 'other' {
   const { h, s, l } = rgbToHsl(r, g, b);
-  if (l > 0.85 && s < 0.2) return 'white';
+  // Pure specular glare (harsh camera flash or direct sun reflection on cuticle) is NOT disease
+  if ((r > 240 && g > 240 && b > 240) || (l > 0.90 && s < 0.10)) return 'other';
+  // True powdery mildew or white fungal sporulation is ashy/off-white with moderate lightness
+  if (l >= 0.65 && l <= 0.88 && s <= 0.22 && (r + g + b) >= 360) return 'white';
   if (s < 0.12) return 'other';
-  if (h >= 60 && h <= 170 && s > 0.2 && l < 0.7) return 'green';
+  if (h >= 60 && h <= 170 && s > 0.18 && l < 0.75) return 'green';
   if (h >= 30 && h < 60 && s > 0.2) return 'yellow';
   if (h < 30 || h >= 330) return 'brown';
   return 'other';
@@ -313,6 +316,79 @@ export interface LesionBox {
   width: number; // % 0-100
   height: number; // % 0-100
   label: string;
+  confidence?: number;
+}
+
+/**
+ * Non-Maximum Suppression (NMS) & Box Merging:
+ * Merges heavily overlapping bounding boxes (IoU > iouThreshold or containment > 0.45)
+ * into a single unified bounding box, eliminating duplicate detection rectangles.
+ */
+export function applyNonMaximumSuppression<T extends LesionBox>(
+  boxes: T[],
+  iouThreshold = 0.28
+): T[] {
+  if (boxes.length <= 1) return boxes;
+
+  const results: T[] = [];
+  const mergedMask = new Set<number>();
+
+  for (let i = 0; i < boxes.length; i++) {
+    if (mergedMask.has(i)) continue;
+    let current = { ...boxes[i] };
+
+    for (let j = i + 1; j < boxes.length; j++) {
+      if (mergedMask.has(j)) continue;
+      const candidate = boxes[j];
+
+      const x1 = Math.max(current.x, candidate.x);
+      const y1 = Math.max(current.y, candidate.y);
+      const x2 = Math.min(current.x + current.width, candidate.x + candidate.width);
+      const y2 = Math.min(current.y + current.height, candidate.y + candidate.height);
+
+      const interW = Math.max(0, x2 - x1);
+      const interH = Math.max(0, y2 - y1);
+      const interArea = interW * interH;
+      const areaA = current.width * current.height;
+      const areaB = candidate.width * candidate.height;
+      const unionArea = areaA + areaB - interArea;
+      const iou = unionArea > 0 ? interArea / unionArea : 0;
+      const containment = Math.min(areaA, areaB) > 0 ? interArea / Math.min(areaA, areaB) : 0;
+
+      if (iou > iouThreshold || containment > 0.45) {
+        // Merge into single enclosing box
+        const minX = Math.min(current.x, candidate.x);
+        const minY = Math.min(current.y, candidate.y);
+        const maxX = Math.max(current.x + current.width, candidate.x + candidate.width);
+        const maxY = Math.max(current.y + current.height, candidate.y + candidate.height);
+
+        current.x = Math.max(0, Math.round(minX * 10) / 10);
+        current.y = Math.max(0, Math.round(minY * 10) / 10);
+        current.width = Math.min(100 - current.x, Math.max(10, Math.round((maxX - minX) * 10) / 10));
+        current.height = Math.min(100 - current.y, Math.max(10, Math.round((maxY - minY) * 10) / 10));
+
+        // Keep dominant label if candidate has specific lesion term
+        if (
+          candidate.label &&
+          candidate.label !== 'Foliar Lesion Hotspot' &&
+          candidate.label !== 'Pathological Lesion Focus' &&
+          (current.label === 'Foliar Lesion Hotspot' || current.label === 'Pathological Lesion Focus')
+        ) {
+          current.label = candidate.label;
+        }
+
+        if (candidate.confidence && current.confidence) {
+          current.confidence = Math.max(current.confidence, candidate.confidence);
+        }
+
+        mergedMask.add(j);
+      }
+    }
+
+    results.push(current);
+  }
+
+  return results;
 }
 
 /**
@@ -324,87 +400,172 @@ export async function detectVisualLesionBoxes(dataUrl: string): Promise<LesionBo
   try {
     const img = await loadImage(dataUrl);
     const canvas = document.createElement('canvas');
-    const cols = 24;
-    const rows = 24;
-    canvas.width = 192;
-    canvas.height = 192;
+    const cols = 28;
+    const rows = 28;
+    const size = 224;
+    canvas.width = size;
+    canvas.height = size;
     const ctx = canvas.getContext('2d');
     if (!ctx) return [];
-    ctx.drawImage(img, 0, 0, 192, 192);
-    const { data } = ctx.getImageData(0, 0, 192, 192);
+    ctx.drawImage(img, 0, 0, size, size);
+    const { data } = ctx.getImageData(0, 0, size, size);
 
-    const cellW = 192 / cols;
-    const cellH = 192 / rows;
+    const cellW = size / cols;
+    const cellH = size / rows;
 
-    // Grid score: count diseased pixels vs green foliage in each cell
-    const grid: Array<Array<{ diseaseCount: number; dominant: string }>> = [];
+    interface CellData {
+      diseaseScore: number;
+      green: number;
+      yellow: number;
+      brown: number;
+      rust: number;
+      white: number;
+      leafPixels: number;
+    }
+
+    const grid: CellData[][] = [];
     for (let r = 0; r < rows; r++) {
       grid[r] = [];
       for (let c = 0; c < cols; c++) {
-        let diseaseCount = 0;
-        let brown = 0;
+        let green = 0;
         let yellow = 0;
+        let brown = 0;
+        let rust = 0;
         let white = 0;
+        let leafPixels = 0;
 
         for (let py = Math.floor(r * cellH); py < Math.floor((r + 1) * cellH); py += 2) {
           for (let px = Math.floor(c * cellW); px < Math.floor((c + 1) * cellW); px += 2) {
-            const idx = (py * 192 + px) * 4;
-            const cls = classifyPixel(data[idx], data[idx + 1], data[idx + 2]);
-            if (cls === 'brown') {
-              diseaseCount++;
-              brown++;
-            } else if (cls === 'yellow') {
-              diseaseCount++;
+            const idx = (py * size + px) * 4;
+            const pr = data[idx];
+            const pg = data[idx + 1];
+            const pb = data[idx + 2];
+            const pa = data[idx + 3];
+            if (pa < 128) continue;
+
+            // Reject skin tones and extreme background glare/void
+            if (!isVegetativePixel(pr, pg, pb)) continue;
+            if (pr > 240 && pg > 240 && pb > 240) continue; // Specular light reflection
+
+            const { h, s, l } = rgbToHsl(pr, pg, pb);
+
+            if (h >= 60 && h <= 170 && s > 0.18 && l < 0.75) {
+              green++;
+              leafPixels++;
+            } else if (h >= 32 && h < 60 && s > 0.20 && l > 0.20 && l < 0.85) {
               yellow++;
-            } else if (cls === 'white') {
-              diseaseCount++;
+              leafPixels++;
+            } else if (h >= 22 && h < 32 && s > 0.28 && l > 0.18 && l < 0.70) {
+              rust++;
+              leafPixels++;
+            } else if (((h >= 0 && h < 22) || h >= 330) && s > 0.16 && l > 0.10 && l < 0.68) {
+              brown++;
+              leafPixels++;
+            } else if (l >= 0.68 && l <= 0.88 && s <= 0.22 && (pr + pg + pb) >= 360 && (pr + pg + pb) < 700) {
+              // Foliar fungal sporulation (powdery mildew / white rust)
               white++;
+              leafPixels++;
             }
           }
         }
 
-        let dominant = 'Lesion / Spot';
-        if (yellow > brown && yellow > white) dominant = 'Chlorotic Yellowing';
-        else if (brown > white) dominant = 'Necrotic Blight Spot';
-        else if (white > 0) dominant = 'Fungal Sporulation';
+        // Disease score weighted: necrosis (brown/rust) is severe, chlorosis (yellow) is moderate
+        // White is counted only if sufficient to prevent stray glare noise
+        const effectiveWhite = white >= 3 ? white * 1.0 : 0;
+        const diseaseScore = leafPixels >= 3
+          ? brown * 1.3 + rust * 1.4 + yellow * 1.0 + effectiveWhite
+          : 0;
 
-        grid[r][c] = { diseaseCount, dominant };
+        grid[r][c] = {
+          diseaseScore,
+          green,
+          yellow,
+          brown,
+          rust,
+          white,
+          leafPixels,
+        };
       }
     }
 
-    // Find connected components of high disease density
+    // Helper to evaluate cluster dominant symptom
+    const resolveClusterSymptom = (
+      yellow: number,
+      brown: number,
+      rust: number,
+      white: number,
+      cellCount: number
+    ): string => {
+      const totalDisease = yellow + brown + rust + white;
+      if (white >= 14 && white >= 0.35 * totalDisease && white >= brown) {
+        return 'Fungal Sporulation';
+      }
+      if (rust >= 10 && rust >= 0.28 * totalDisease && rust >= yellow) {
+        return 'Fungal Rust Pustule';
+      }
+      if (brown >= yellow && brown >= white && brown > 0) {
+        return cellCount <= 4 ? 'Necrotic Blight Spot' : 'Necrotic Lesion';
+      }
+      if (yellow >= brown && yellow > 0) {
+        return 'Chlorotic Yellowing';
+      }
+      return 'Pathological Foliar Lesion';
+    };
+
+    // Connected components flood fill
     const visited: boolean[][] = Array.from({ length: rows }, () => Array(cols).fill(false));
-    const clusters: Array<{
+    interface ClusterInfo {
       minC: number;
       maxC: number;
       minR: number;
       maxR: number;
-      label: string;
+      sumC: number;
+      sumR: number;
       count: number;
-    }> = [];
+      totalYellow: number;
+      totalBrown: number;
+      totalRust: number;
+      totalWhite: number;
+      dominantLabel: string;
+      confidence: number;
+    }
 
+    const clusters: ClusterInfo[] = [];
+
+    // Primary scan pass with score threshold >= 4
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        if (!visited[r][c] && grid[r][c].diseaseCount >= 4) {
-          let minC = c,
-            maxC = c,
-            minR = r,
-            maxR = r;
+        if (!visited[r][c] && grid[r][c].diseaseScore >= 4) {
+          let minC = c, maxC = c, minR = r, maxR = r;
+          let sumC = 0, sumR = 0;
           let totalCount = 0;
-          const label = grid[r][c].dominant;
+          let totalYellow = 0;
+          let totalBrown = 0;
+          let totalRust = 0;
+          let totalWhite = 0;
+          let cellCount = 0;
 
           const queue: Array<[number, number]> = [[r, c]];
           visited[r][c] = true;
 
           while (queue.length > 0) {
             const [currR, currC] = queue.pop()!;
-            totalCount += grid[currR][currC].diseaseCount;
+            const cell = grid[currR][currC];
+            const weight = Math.max(1, cell.diseaseScore);
+            totalCount += cell.diseaseScore;
+            totalYellow += cell.yellow;
+            totalBrown += cell.brown;
+            totalRust += cell.rust;
+            totalWhite += cell.white;
+            sumC += currC * weight;
+            sumR += currR * weight;
+            cellCount++;
+
             minC = Math.min(minC, currC);
             maxC = Math.max(maxC, currC);
             minR = Math.min(minR, currR);
             maxR = Math.max(maxR, currR);
 
-            // 4-neighborhood
             const neighbors = [
               [currR - 1, currC],
               [currR + 1, currC],
@@ -418,7 +579,7 @@ export async function detectVisualLesionBoxes(dataUrl: string): Promise<LesionBo
                 nc >= 0 &&
                 nc < cols &&
                 !visited[nr][nc] &&
-                grid[nr][nc].diseaseCount >= 3
+                grid[nr][nc].diseaseScore >= 2.5
               ) {
                 visited[nr][nc] = true;
                 queue.push([nr, nc]);
@@ -426,38 +587,63 @@ export async function detectVisualLesionBoxes(dataUrl: string): Promise<LesionBo
             }
           }
 
-          // Filter out tiny single-pixel noise and full-screen wash
           const widthCells = maxC - minC + 1;
           const heightCells = maxR - minR + 1;
-          if (totalCount >= 12 && widthCells < cols * 0.85 && heightCells < rows * 0.85) {
-            clusters.push({ minC, maxC, minR, maxR, label, count: totalCount });
+
+          // Reject full-image washed backgrounds and tiny single-pixel noise
+          if (totalCount >= 10 && widthCells < cols * 0.85 && heightCells < rows * 0.85) {
+            const dominantLabel = resolveClusterSymptom(totalYellow, totalBrown, totalRust, totalWhite, cellCount);
+            const conf = Math.min(0.96, Math.max(0.68, 0.72 + Math.min(0.22, totalCount / 120)));
+            clusters.push({
+              minC, maxC, minR, maxR,
+              sumC, sumR, count: totalCount,
+              totalYellow, totalBrown, totalRust, totalWhite,
+              dominantLabel,
+              confidence: Math.round(conf * 100) / 100,
+            });
           }
         }
       }
     }
 
-    // Fallback: If no clusters found with primary threshold, lower threshold and re-scan
+    // Fallback pass: if no clusters found, lower threshold
     if (clusters.length === 0) {
       const visited2: boolean[][] = Array.from({ length: rows }, () => Array(cols).fill(false));
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-          if (!visited2[r][c] && grid[r][c].diseaseCount >= 2) {
+          if (!visited2[r][c] && grid[r][c].diseaseScore >= 2.0) {
             let minC = c, maxC = c, minR = r, maxR = r;
+            let sumC = 0, sumR = 0;
             let totalCount = 0;
-            const label = grid[r][c].dominant;
+            let totalYellow = 0;
+            let totalBrown = 0;
+            let totalRust = 0;
+            let totalWhite = 0;
+            let cellCount = 0;
+
             const queue: Array<[number, number]> = [[r, c]];
             visited2[r][c] = true;
 
             while (queue.length > 0) {
               const [currR, currC] = queue.pop()!;
-              totalCount += grid[currR][currC].diseaseCount;
+              const cell = grid[currR][currC];
+              const weight = Math.max(1, cell.diseaseScore);
+              totalCount += cell.diseaseScore;
+              totalYellow += cell.yellow;
+              totalBrown += cell.brown;
+              totalRust += cell.rust;
+              totalWhite += cell.white;
+              sumC += currC * weight;
+              sumR += currR * weight;
+              cellCount++;
+
               minC = Math.min(minC, currC);
               maxC = Math.max(maxC, currC);
               minR = Math.min(minR, currR);
               maxR = Math.max(maxR, currR);
 
               for (const [nr, nc] of [[currR - 1, currC], [currR + 1, currC], [currR, currC - 1], [currR, currC + 1]]) {
-                if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && !visited2[nr][nc] && grid[nr][nc].diseaseCount >= 1) {
+                if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && !visited2[nr][nc] && grid[nr][nc].diseaseScore >= 1.5) {
                   visited2[nr][nc] = true;
                   queue.push([nr, nc]);
                 }
@@ -467,67 +653,57 @@ export async function detectVisualLesionBoxes(dataUrl: string): Promise<LesionBo
             const widthCells = maxC - minC + 1;
             const heightCells = maxR - minR + 1;
             if (totalCount >= 5 && widthCells < cols * 0.85 && heightCells < rows * 0.85) {
-              clusters.push({ minC, maxC, minR, maxR, label, count: totalCount });
+              const dominantLabel = resolveClusterSymptom(totalYellow, totalBrown, totalRust, totalWhite, cellCount);
+              clusters.push({
+                minC, maxC, minR, maxR,
+                sumC, sumR, count: totalCount,
+                totalYellow, totalBrown, totalRust, totalWhite,
+                dominantLabel,
+                confidence: 0.75,
+              });
             }
           }
         }
       }
     }
 
-    // Secondary fallback: if still zero, locate the top 1-2 dense cells
-    if (clusters.length === 0) {
-      let maxVal = 0;
-      let bestR = Math.floor(rows / 2);
-      let bestC = Math.floor(cols / 2);
-      let bestLabel = 'Pathological Lesion Focus';
-
-      for (let r = 2; r < rows - 2; r++) {
-        for (let c = 2; c < cols - 2; c++) {
-          if (grid[r][c].diseaseCount > maxVal) {
-            maxVal = grid[r][c].diseaseCount;
-            bestR = r;
-            bestC = c;
-            bestLabel = grid[r][c].dominant;
-          }
-        }
-      }
-
-      clusters.push({
-        minC: Math.max(0, bestC - 2),
-        maxC: Math.min(cols - 1, bestC + 2),
-        minR: Math.max(0, bestR - 2),
-        maxR: Math.min(rows - 1, bestR + 2),
-        label: bestLabel,
-        count: Math.max(4, maxVal * 4),
-      });
-    }
-
     // Sort clusters by prominence
     clusters.sort((a, b) => b.count - a.count);
 
-    // Convert top 4 clusters to percentage boxes
-    return clusters.slice(0, 4).map((cl) => {
-      // Add slight 1-cell padding around the lesion for visibility
-      const padC = 0.5;
-      const padR = 0.5;
-      const minX = Math.max(0, (cl.minC - padC) / cols);
-      const minY = Math.max(0, (cl.minR - padR) / rows);
-      const maxX = Math.min(1, (cl.maxC + 1 + padC) / cols);
-      const maxY = Math.min(1, (cl.maxR + 1 + padR) / rows);
+    // Convert top clusters to centered, padded bounding boxes
+    const rawBoxes: LesionBox[] = clusters.slice(0, 6).map((cl) => {
+      // Centroid calculation from weighted cell coordinates
+      const centerNormX = (cl.sumC / cl.count + 0.5) / cols;
+      const centerNormY = (cl.sumR / cl.count + 0.5) / rows;
 
-      const x = Math.round(minX * 100);
-      const y = Math.round(minY * 100);
-      const w = Math.min(100 - x, Math.max(12, Math.round((maxX - minX) * 100)));
-      const h = Math.min(100 - y, Math.max(12, Math.round((maxY - minY) * 100)));
+      const spanX = (cl.maxC - cl.minC + 1) / cols;
+      const spanY = (cl.maxR - cl.minR + 1) / rows;
+
+      // Add 2% padding margin around lesion for clean visual grounding
+      const boxW = Math.min(0.85, Math.max(0.10, spanX + 0.03));
+      const boxH = Math.min(0.85, Math.max(0.10, spanY + 0.03));
+
+      const halfW = boxW / 2;
+      const halfH = boxH / 2;
+
+      const x = Math.max(0, Math.min(100 - Math.round(boxW * 100), Math.round((centerNormX - halfW) * 100)));
+      const y = Math.max(0, Math.min(100 - Math.round(boxH * 100), Math.round((centerNormY - halfH) * 100)));
+      const width = Math.min(100 - x, Math.max(10, Math.round(boxW * 100)));
+      const height = Math.min(100 - y, Math.max(10, Math.round(boxH * 100)));
 
       return {
         x,
         y,
-        width: w,
-        height: h,
-        label: cl.label,
+        width,
+        height,
+        label: cl.dominantLabel,
+        confidence: cl.confidence,
       };
     });
+
+    // Apply Non-Maximum Suppression to eliminate overlapping duplicate boxes
+    const nmsBoxes = applyNonMaximumSuppression(rawBoxes, 0.28);
+    return nmsBoxes.slice(0, 4);
   } catch {
     return [];
   }
@@ -587,6 +763,10 @@ export function isVegetativePixel(r: number, g: number, b: number): boolean {
   }
   // Suppress very dark soil / mulch / shadows
   if (r < 25 && g < 25 && b < 25) {
+    return false;
+  }
+  // Suppress extreme specular glare / light reflection
+  if (r > 245 && g > 245 && b > 245) {
     return false;
   }
   // Plant vegetative foliage generally has strong green or chlorotic yellow/brown diseased components

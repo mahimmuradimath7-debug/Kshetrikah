@@ -38,37 +38,71 @@ def resolve_path(path_str: str) -> Path:
     return p
 
 def detect_lesion_boxes(image_path: str):
-    """Vegetative foliar lesion localization using color gradient clustering."""
+    """Vegetative foliar lesion localization using multi-symptom color gradient clustering with NMS."""
     try:
         img = Image.open(image_path).convert("RGB")
-        img_thumb = img.resize((128, 128))
+        img_thumb = img.resize((160, 160))
         rgb = np.asarray(img_thumb, dtype=np.float32)
         r, g, b = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
         
-        is_green = (g > r * 1.05) & (g > b * 1.05) & (g > 40)
-        is_brown = (r > 70) & (g > 40) & (b < 80) & (r > g) & ((r - b) > 20)
-        is_yellow = (r > 100) & (g > 100) & (b < 80) & (abs(r - g) < 40)
-        is_lesion = (is_brown | is_yellow) & ~is_green
+        # Suppress human skin tones (hands holding leaf) and extreme specular glare
+        is_skin = (r > 95) & (g > 40) & (b > 20) & (r > g) & (r > b) & ((r - g) > 15)
+        is_glare = (r > 240) & (g > 240) & (b > 240)
+        
+        is_green = (g > r * 1.05) & (g > b * 1.05) & (g > 40) & ~is_skin & ~is_glare
+        is_brown = (r > 65) & (g > 35) & (b < 85) & (r > g) & ((r - b) > 18) & ~is_skin & ~is_glare
+        is_rust = (r > 90) & (g > 45) & (b < 55) & (r > g * 1.25) & ~is_skin & ~is_glare
+        is_yellow = (r > 95) & (g > 95) & (b < 85) & (abs(r - g) < 42) & ~is_green & ~is_skin & ~is_glare
 
-        rows, cols = 8, 8
-        r_step, c_step = 128 // rows, 128 // cols
-        grid = np.zeros((rows, cols), dtype=int)
+        rows, cols = 16, 16
+        r_step, c_step = 160 // rows, 160 // cols
+        
+        candidates = []
         for i in range(rows):
             for j in range(cols):
-                patch = is_lesion[i * r_step:(i + 1) * r_step, j * c_step:(j + 1) * c_step]
-                grid[i, j] = int(np.sum(patch))
+                patch_brown = np.sum(is_brown[i * r_step:(i + 1) * r_step, j * c_step:(j + 1) * c_step])
+                patch_yellow = np.sum(is_yellow[i * r_step:(i + 1) * r_step, j * c_step:(j + 1) * c_step])
+                patch_rust = np.sum(is_rust[i * r_step:(i + 1) * r_step, j * c_step:(j + 1) * c_step])
+                
+                score = patch_brown * 1.3 + patch_rust * 1.4 + patch_yellow * 1.0
+                if score >= 8:
+                    if patch_rust > patch_brown and patch_rust > patch_yellow:
+                        lbl = "Fungal Rust Pustule"
+                    elif patch_brown >= patch_yellow:
+                        lbl = "Necrotic Blight Spot"
+                    else:
+                        lbl = "Chlorotic Yellowing"
+                    candidates.append((score, i, j, lbl))
 
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        
         boxes = []
-        if np.any(grid > 0):
-            best_cy, best_cx = np.unravel_index(np.argmax(grid), grid.shape)
-            ymin = int(max(0, (best_cy - 0.5) / rows * 1000))
-            xmin = int(max(0, (best_cx - 0.5) / cols * 1000))
-            ymax = int(min(1000, (best_cy + 1.5) / rows * 1000))
-            xmax = int(min(1000, (best_cx + 1.5) / cols * 1000))
-            boxes.append({
-                "box_2d": [ymin, xmin, ymax, xmax],
-                "label": "Foliar Lesion Hotspot"
-            })
+        for score, cy, cx, lbl in candidates:
+            ymin = int(max(0, (cy - 0.75) / rows * 1000))
+            xmin = int(max(0, (cx - 0.75) / cols * 1000))
+            ymax = int(min(1000, (cy + 1.75) / rows * 1000))
+            xmax = int(min(1000, (cx + 1.75) / cols * 1000))
+            
+            # Simple NMS check: skip if overlaps > 30% with any existing box
+            overlap = False
+            for b in boxes:
+                by1, bx1, by2, bx2 = b["box_2d"]
+                inter_x = max(0, min(xmax, bx2) - max(xmin, bx1))
+                inter_y = max(0, min(ymax, by2) - max(ymin, by1))
+                inter_area = inter_x * inter_y
+                area1 = (xmax - xmin) * (ymax - ymin)
+                area2 = (bx2 - bx1) * (by2 - by1)
+                union_area = area1 + area2 - inter_area
+                if union_area > 0 and (inter_area / union_area) > 0.28:
+                    overlap = True
+                    break
+            if not overlap:
+                boxes.append({
+                    "box_2d": [ymin, xmin, ymax, xmax],
+                    "label": lbl
+                })
+                if len(boxes) >= 3:
+                    break
         return boxes
     except Exception:
         return []

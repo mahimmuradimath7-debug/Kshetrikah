@@ -35,6 +35,7 @@ import {
   PhoneCall,
   Send,
   CalendarCheck,
+  Crosshair,
 } from "lucide-react";
 import { generateTreatmentIcs, downloadCalendarFile } from "@/lib/calendarExport";
 import { jsPDF } from "jspdf";
@@ -109,6 +110,63 @@ const STEPS: Step[] = [
   "weather",
   "results",
 ];
+
+function getSymptomTheme(label: string) {
+  const norm = (label || "").toLowerCase();
+  if (norm.includes("yellow") || norm.includes("chlorot") || norm.includes("mosaic") || norm.includes("streak") || norm.includes("halo")) {
+    return {
+      border: "border-amber-400",
+      bg: "bg-amber-400/20",
+      shadow: "shadow-[0_0_12px_rgba(251,191,36,0.45)]",
+      badgeBg: "bg-amber-500 text-amber-950 font-bold",
+      dotColor: "bg-amber-950",
+      badgeChip: "bg-amber-50 border-amber-300 text-amber-900",
+      reticle: "border-amber-400",
+    };
+  }
+  if (norm.includes("spor") || norm.includes("mildew") || norm.includes("white") || norm.includes("mold") || norm.includes("fungal")) {
+    return {
+      border: "border-sky-400",
+      bg: "bg-sky-400/20",
+      shadow: "shadow-[0_0_12px_rgba(56,189,248,0.45)]",
+      badgeBg: "bg-sky-600 text-white font-bold",
+      dotColor: "bg-white",
+      badgeChip: "bg-sky-50 border-sky-300 text-sky-900",
+      reticle: "border-sky-400",
+    };
+  }
+  if (norm.includes("rust") || norm.includes("pustule") || norm.includes("bore") || norm.includes("caterpillar") || norm.includes("larva")) {
+    return {
+      border: "border-orange-500",
+      bg: "bg-orange-500/20",
+      shadow: "shadow-[0_0_12px_rgba(249,115,22,0.45)]",
+      badgeBg: "bg-orange-600 text-white font-bold",
+      dotColor: "bg-white",
+      badgeChip: "bg-orange-50 border-orange-300 text-orange-900",
+      reticle: "border-orange-400",
+    };
+  }
+  if (norm.includes("necrotic") || norm.includes("blight") || norm.includes("spot") || norm.includes("rot") || norm.includes("canker") || norm.includes("wilt")) {
+    return {
+      border: "border-rose-500",
+      bg: "bg-rose-500/20",
+      shadow: "shadow-[0_0_12px_rgba(244,63,94,0.45)]",
+      badgeBg: "bg-rose-600 text-white font-bold",
+      dotColor: "bg-white",
+      badgeChip: "bg-rose-50 border-rose-300 text-rose-900",
+      reticle: "border-rose-400",
+    };
+  }
+  return {
+    border: "border-emerald-500",
+    bg: "bg-emerald-500/20",
+    shadow: "shadow-[0_0_12px_rgba(16,185,129,0.45)]",
+    badgeBg: "bg-emerald-600 text-white font-bold",
+    dotColor: "bg-white",
+    badgeChip: "bg-emerald-50 border-emerald-300 text-emerald-900",
+    reticle: "border-emerald-400",
+  };
+}
 
 export default function WizardPage() {
   const t = useTranslations("wizard");
@@ -845,23 +903,52 @@ export default function WizardPage() {
                         />
 
                         {/* Visual Bounding Box Overlay for both uploaded & preset samples */}
-                        {detectedBoxes.map((box, idx) => (
-                          <div
-                            key={idx}
-                            className="absolute border-2 border-rose-500 bg-rose-500/25 rounded transition-all duration-300 shadow-[0_0_12px_rgba(244,63,94,0.6)] animate-pulse"
-                            style={{
-                              left: `${box.x}%`,
-                              top: `${box.y}%`,
-                              width: `${box.width}%`,
-                              height: `${box.height}%`,
-                            }}
-                          >
-                            <span className="absolute -top-6 left-0 text-[10px] font-bold bg-rose-600 text-white px-2 py-0.5 rounded shadow whitespace-nowrap flex items-center gap-1 z-10 pointer-events-none">
-                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                              {box.label}
-                            </span>
-                          </div>
-                        ))}
+                        {detectedBoxes.map((box, idx) => {
+                          const theme = getSymptomTheme(box.label);
+                          const isNearTop = box.y < 8;
+                          const isNearRight = box.x > 68;
+                          return (
+                            <div
+                              key={idx}
+                              className={cn(
+                                "absolute border-2 rounded transition-all duration-300 pointer-events-none",
+                                theme.border,
+                                theme.bg,
+                                theme.shadow
+                              )}
+                              style={{
+                                left: `${box.x}%`,
+                                top: `${box.y}%`,
+                                width: `${box.width}%`,
+                                height: `${box.height}%`,
+                              }}
+                            >
+                              {/* Corner reticle markers */}
+                              <span className={cn("absolute -top-0.5 -left-0.5 w-2 h-2 border-t-2 border-l-2", theme.reticle)} />
+                              <span className={cn("absolute -top-0.5 -right-0.5 w-2 h-2 border-t-2 border-r-2", theme.reticle)} />
+                              <span className={cn("absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b-2 border-l-2", theme.reticle)} />
+                              <span className={cn("absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b-2 border-r-2", theme.reticle)} />
+
+                              {/* Clipping-safe symptom badge */}
+                              <span
+                                className={cn(
+                                  "absolute text-[10px] px-2 py-0.5 rounded shadow whitespace-nowrap flex items-center gap-1 z-10 pointer-events-none",
+                                  theme.badgeBg,
+                                  isNearTop ? "top-1" : "-top-6",
+                                  isNearRight ? "right-0" : "left-0"
+                                )}
+                              >
+                                <span className={cn("w-1.5 h-1.5 rounded-full", theme.dotColor)} />
+                                {box.label}
+                                {box.confidence && (
+                                  <span className="opacity-80 font-mono text-[9px] ml-0.5">
+                                    {Math.round(box.confidence * 100)}%
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -1800,40 +1887,88 @@ function Results({
               />
 
               {showBoxes &&
-                detectedBoxes.map((box, idx) => (
-                  <div
-                    key={idx}
-                    className="absolute border-2 border-rose-500 bg-rose-500/25 rounded transition-all duration-300 shadow-[0_0_12px_rgba(244,63,94,0.6)] animate-pulse"
-                    style={{
-                      left: `${box.x}%`,
-                      top: `${box.y}%`,
-                      width: `${box.width}%`,
-                      height: `${box.height}%`,
-                    }}
-                  >
-                    <span className="absolute -top-6 left-0 text-[10px] font-bold bg-rose-600 text-white px-2 py-0.5 rounded shadow whitespace-nowrap flex items-center gap-1 z-10 pointer-events-none">
-                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                      {box.label}
-                    </span>
-                  </div>
-                ))}
+                detectedBoxes.map((box, idx) => {
+                  const theme = getSymptomTheme(box.label);
+                  const isNearTop = box.y < 8;
+                  const isNearRight = box.x > 68;
+                  return (
+                    <div
+                      key={idx}
+                      className={cn(
+                        "absolute border-2 rounded transition-all duration-300 pointer-events-none",
+                        theme.border,
+                        theme.bg,
+                        theme.shadow
+                      )}
+                      style={{
+                        left: `${box.x}%`,
+                        top: `${box.y}%`,
+                        width: `${box.width}%`,
+                        height: `${box.height}%`,
+                      }}
+                    >
+                      {/* Corner reticle markers */}
+                      <span className={cn("absolute -top-0.5 -left-0.5 w-2 h-2 border-t-2 border-l-2", theme.reticle)} />
+                      <span className={cn("absolute -top-0.5 -right-0.5 w-2 h-2 border-t-2 border-r-2", theme.reticle)} />
+                      <span className={cn("absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b-2 border-l-2", theme.reticle)} />
+                      <span className={cn("absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b-2 border-r-2", theme.reticle)} />
+
+                      {/* Clipping-safe symptom badge */}
+                      <span
+                        className={cn(
+                          "absolute text-[10px] px-2 py-0.5 rounded shadow whitespace-nowrap flex items-center gap-1 z-10 pointer-events-none",
+                          theme.badgeBg,
+                          isNearTop ? "top-1" : "-top-6",
+                          isNearRight ? "right-0" : "left-0"
+                        )}
+                      >
+                        <span className={cn("w-1.5 h-1.5 rounded-full", theme.dotColor)} />
+                        {box.label}
+                        {box.confidence && (
+                          <span className="opacity-80 font-mono text-[9px] ml-0.5">
+                            {Math.round(box.confidence * 100)}%
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
             </div>
           </div>
 
 
           {detectedBoxes.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
-              <span className="text-[11px] text-leaf-600 font-medium">
+              <span className="text-[11px] text-leaf-700 font-semibold flex items-center gap-1">
+                <Crosshair className="w-3.5 h-3.5 text-leaf-600" />
                 AI Annotated Symptoms:
               </span>
-              {detectedBoxes.map((box, idx) => (
-                <span
-                  key={idx}
-                  className="text-[10px] px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-800 font-medium"
-                >
-                  • {box.label}
-                </span>
-              ))}
+              {Array.from(
+                detectedBoxes.reduce((acc, box) => {
+                  const key = box.label;
+                  acc.set(key, (acc.get(key) || 0) + 1);
+                  return acc;
+                }, new Map<string, number>())
+              ).map(([label, count], idx) => {
+                const theme = getSymptomTheme(label);
+                return (
+                  <span
+                    key={idx}
+                    className={cn(
+                      "text-[10px] px-2.5 py-0.5 rounded-full font-medium inline-flex items-center gap-1 border shadow-xs transition-all",
+                      theme.badgeChip
+                    )}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />
+                    {label}
+                    {count > 1 && (
+                      <span className="opacity-75 font-mono text-[9px]">
+                        ({count} {count === 1 ? 'lesion' : 'lesions'})
+                      </span>
+                    )}
+                  </span>
+                );
+              })}
             </div>
           )}
         </div>

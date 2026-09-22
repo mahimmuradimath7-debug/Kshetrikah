@@ -16,6 +16,7 @@ import { sanitizeAndValidateImage } from '@/lib/security';
 import { scanDb } from '@/lib/dbPersistence';
 import { getScanCache, setScanCache } from '@/lib/scanPersistence';
 import { predictLocalDiseaseFromDataUrl, type LocalPredictionResult } from '@/lib/localDiseaseModel';
+import { applyNonMaximumSuppression } from '@/lib/imageAnalysis';
 import type {
   CropId,
   PlantPart,
@@ -184,7 +185,9 @@ function normalizeBoundingBoxes(rawBoxes: unknown): BoundingBox[] {
     });
   }
 
-  return boxes.slice(0, 5);
+  // Deduplicate and suppress overlapping bounding boxes
+  const nmsBoxes = applyNonMaximumSuppression(boxes, 0.30);
+  return nmsBoxes.slice(0, 5);
 }
 
 
