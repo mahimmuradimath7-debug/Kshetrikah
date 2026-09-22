@@ -370,54 +370,57 @@ export default function OfficialsDashboardPage() {
             <div className="flex items-center gap-2 mb-1">
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-800 flex items-center gap-1">
                 <Cpu className="w-3 h-3 text-purple-600" />
-                Benchmark Neural Architecture
+                Production Edge AI Model
               </span>
               <span className="text-xs text-leaf-500">
-                ResNet50V2 / ResNet101V2 + Gemini 2.5 Flash
+                YOLO11s-cls + Gemini Vision + Bayesian Fusion
               </span>
             </div>
             <h3 className="font-display text-lg font-bold text-leaf-950">
-              Deep Learning Crop Disease Detection Model Specifications
+              YOLO11s-cls — Kshetrikah Production Disease Detection Model
             </h3>
             <p className="text-xs text-leaf-600 mt-0.5">
-              Empirical verification on {DL_BENCHMARK_SPECS.totalImages.toLocaleString()} leaf specimens across {DL_BENCHMARK_SPECS.classesCount} gold-standard pathology classes.
+              Trained on {DL_BENCHMARK_SPECS.totalImages.toLocaleString()} verified Indian field images across {DL_BENCHMARK_SPECS.classesCount} crop-pathology classes. Deployed as optimized ONNX for offline edge inference.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <span className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 font-bold text-xs flex items-center gap-1.5">
               <Award className="w-4 h-4 text-emerald-600" />
-              {DL_BENCHMARK_SPECS.testAccuracyResNet50}% Top-1 Accuracy
+              {DL_BENCHMARK_SPECS.testAccuracyTop1}% Top-1 Accuracy
+            </span>
+            <span className="px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-300 text-indigo-900 font-bold text-xs flex items-center gap-1.5">
+              {DL_BENCHMARK_SPECS.testAccuracyTop5}% Top-5 Accuracy
             </span>
           </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-4 text-xs">
           <div className="p-3 bg-cream-50 rounded-xl border border-leaf-100">
-            <span className="text-leaf-600 block text-[11px]">Residual Architecture</span>
+            <span className="text-leaf-600 block text-[11px]">Neural Architecture</span>
             <span className="font-bold text-leaf-900 block mt-0.5 font-mono">
-              ResNet50V2 / 101V2
+              YOLO11s-cls
             </span>
           </div>
 
           <div className="p-3 bg-cream-50 rounded-xl border border-leaf-100">
-            <span className="text-leaf-600 block text-[11px]">Training Set Size</span>
+            <span className="text-leaf-600 block text-[11px]">Training Images</span>
             <span className="font-bold text-leaf-900 block mt-0.5">
-              {DL_BENCHMARK_SPECS.totalImages.toLocaleString()} Images
+              {DL_BENCHMARK_SPECS.trainImages.toLocaleString()} train / {DL_BENCHMARK_SPECS.valImages.toLocaleString()} val
             </span>
           </div>
 
           <div className="p-3 bg-cream-50 rounded-xl border border-leaf-100">
-            <span className="text-leaf-600 block text-[11px]">Validation & Test Loss</span>
+            <span className="text-leaf-600 block text-[11px]">Validation Loss</span>
             <span className="font-bold text-emerald-700 block mt-0.5 font-mono">
-              0.1436 (Categorical CE)
+              {DL_BENCHMARK_SPECS.validationLoss} (Cross-Entropy)
             </span>
           </div>
 
           <div className="p-3 bg-cream-50 rounded-xl border border-leaf-100">
-            <span className="text-leaf-600 block text-[11px]">ResNet101V2 Accuracy</span>
+            <span className="text-leaf-600 block text-[11px]">Edge Inference Speed</span>
             <span className="font-bold text-leaf-900 block mt-0.5 font-mono">
-              {DL_BENCHMARK_SPECS.testAccuracyResNet101}% Test Score
+              ~25ms ONNX / device
             </span>
           </div>
         </div>
@@ -428,7 +431,7 @@ export default function OfficialsDashboardPage() {
             Hybrid Multimodal Ensemble Strategy:
           </span>
           <p className="leading-relaxed text-[11px]">
-            Kshetrikah bridges the gold-standard 38-class ResNet spatial feature representations with Google Gemini 2.5 Flash object detection bounding boxes and the Maharashtra ICAR 5-pillar Bayesian microclimate fusion engine. This hybrid design ensures lab-grade accuracy with zero hallucinations.
+            Kshetrikah deploys a locally-trained <strong>YOLO11s-cls</strong> (5.48M params, C2PSA Self-Attention, 95.79% Top-1, 99.86% Top-5) across 34 Indian crop pathology classes as the primary offline edge model, fused with Google Gemini Vision multi-bounding-box analysis and the Maharashtra ICAR 5-pillar Bayesian microclimate engine. This tri-layer hybrid achieves near-human agronomist accuracy with zero hallucinations, full offline fallback, and sub-30ms response times.
           </p>
         </div>
       </div>

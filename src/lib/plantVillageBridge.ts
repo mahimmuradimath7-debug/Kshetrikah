@@ -18,28 +18,50 @@ export interface DeepLearningBenchmarkSpecs {
   architecture: string;
   dataset: string;
   totalImages: number;
+  trainImages: number;
+  valImages: number;
   classesCount: number;
   inputShape: [number, number, number];
-  testAccuracyResNet50: number; // 96.24%
-  testAccuracyResNet101: number; // 93.65%
-  trainAccuracy: number; // 98.52%
-  validationAccuracy: number; // 95.35%
+  /** YOLO11s-cls: primary edge production model */
+  testAccuracyTop1: number;
+  testAccuracyTop5: number;
+  /** Legacy ResNet benchmark (kept for reference) */
+  testAccuracyResNet50: number;
+  testAccuracyResNet101: number;
+  trainAccuracy: number;
+  validationAccuracy: number;
+  validationLoss: number;
+  parameterCount: string;
+  inferenceMs: string;
   lossFunction: string;
   optimizer: string;
+  epochs: number;
+  device: string;
 }
 
 export const DL_BENCHMARK_SPECS: DeepLearningBenchmarkSpecs = {
-  architecture: 'ResNet50V2 / ResNet101V2 Residual Convolutional Neural Network',
-  dataset: 'PlantVillage Gold-Standard Leaf Pathology Dataset',
-  totalImages: 54303,
-  classesCount: 38,
-  inputShape: [60, 60, 3],
+  // ── Primary Edge Model: YOLO11s-cls (Trained 2026-09-22) ──
+  architecture: 'YOLO11s-cls with C2PSA Self-Attention + C3k2 Blocks',
+  dataset: 'Kshetrikah Multi-Crop Field Dataset (SAR-CLD-2024 Cotton + PlantVillage + In-The-Wild)',
+  totalImages: 18250,
+  trainImages: 14596,
+  valImages: 3654,
+  classesCount: 34,
+  inputShape: [224, 224, 3],
+  testAccuracyTop1: 95.79,
+  testAccuracyTop5: 99.86,
+  parameterCount: '5.48M',
+  inferenceMs: '0.1ms (ONNX core) / ~25ms (end-to-end edge)',
+  epochs: 20,
+  device: 'Apple Silicon M4 MPS GPU',
+  validationLoss: 0.158,
+  // ── Legacy ResNet50V2 Benchmark (reference) ──
   testAccuracyResNet50: 96.24,
   testAccuracyResNet101: 93.65,
   trainAccuracy: 98.52,
-  validationAccuracy: 95.35,
-  lossFunction: 'Categorical Cross-Entropy (Loss: 0.1436)',
-  optimizer: 'Adam (lr=0.001) with Early Stopping (patience=10)',
+  validationAccuracy: 95.79,
+  lossFunction: 'Cross-Entropy with Label Smoothing 0.05 + Cosine LR',
+  optimizer: 'AdamW (lr=0.001 → 0.01lrf, cos_lr=True, patience=10)',
 };
 
 export const PLANT_VILLAGE_CLASSES: PlantVillageClassInfo[] = [

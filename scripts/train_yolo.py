@@ -18,11 +18,12 @@ import torch
 def main():
     parser = argparse.ArgumentParser(description="Train YOLO multi-crop disease classification model")
     parser.add_argument("--data", default="data/training_multicrop", help="Path to classification dataset directory")
-    parser.add_argument("--model", default="yolo11n-cls.pt", help="Pretrained base model (e.g. yolo11n-cls.pt or yolov8n-cls.pt)")
-    parser.add_argument("--epochs", type=int, default=15, help="Number of training epochs")
+    parser.add_argument("--model", default="yolo11s-cls.pt", help="Pretrained base model (e.g. yolo11s-cls.pt or yolov8s-cls.pt)")
+    parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
     parser.add_argument("--batch", type=int, default=64, help="Batch size (reduce to 32 if memory pressure occurs)")
     parser.add_argument("--imgsz", type=int, default=224, help="Input image dimension (224x224)")
     parser.add_argument("--lr0", type=float, default=0.001, help="Initial learning rate")
+    parser.add_argument("--lrf", type=float, default=0.01, help="Final learning rate fraction")
     parser.add_argument("--workers", type=int, default=4, help="Data loader workers")
     parser.add_argument("--device", default="", help="Device: 'mps', 'cuda', 'cpu' or empty for auto-detect")
     args = parser.parse_args()
@@ -79,10 +80,13 @@ def main():
     try:
         model = YOLO(args.model)
     except Exception as e:
-        print(f"⚠️  Failed to load '{args.model}' ({e}), falling back to 'yolov8n-cls.pt'")
-        model = YOLO("yolov8n-cls.pt")
+        print(f"⚠️  Failed to load '{args.model}' ({e}), falling back to 'yolov8s-cls.pt'")
+        try:
+            model = YOLO("yolov8s-cls.pt")
+        except Exception:
+            model = YOLO("yolov8n-cls.pt")
 
-    # Launch fine-tuning
+    # Launch fine-tuning with agricultural augmentations and cosine LR
     print("\n🚀 Starting training loop...")
     results = model.train(
         data=str(data_dir),
@@ -93,10 +97,22 @@ def main():
         workers=args.workers,
         optimizer="AdamW",
         lr0=args.lr0,
+        lrf=args.lrf,
+        cos_lr=True,
+        label_smoothing=0.05,
+        hsv_h=0.015,
+        hsv_s=0.7,
+        hsv_v=0.4,
+        degrees=15.0,
+        translate=0.1,
+        scale=0.5,
+        erasing=0.3,
+        flipud=0.5,
+        fliplr=0.5,
         project=str(repo_root / "runs" / "classify"),
         name="multicrop_yolo",
         exist_ok=True,
-        patience=5,
+        patience=10,
         verbose=True,
         plots=True,
     )
@@ -118,9 +134,10 @@ def main():
         print(f"💾 Exported Best PyTorch Weights: {target_pt}")
 
     # Export to ONNX for ultra-fast production inference
-    print("\n📦 Exporting model to ONNX format...")
+    print("\n📦 Exporting best model to ONNX format...")
     try:
-        onnx_file = model.export(format="onnx", imgsz=args.imgsz)
+        export_model = YOLO(str(best_pt)) if best_pt.exists() else model
+        onnx_file = export_model.export(format="onnx", imgsz=args.imgsz, simplify=True)
         if onnx_file and Path(onnx_file).exists():
             target_onnx = artifacts_dir / "crop_disease_yolo.onnx"
             shutil.copy2(onnx_file, target_onnx)

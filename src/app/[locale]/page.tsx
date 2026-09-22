@@ -208,7 +208,7 @@ export default function HomePage() {
                   <Stethoscope className="w-6 h-6" />
                 </span>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  CV-YOLOv8
+                  CV-YOLO11s
                 </span>
               </div>
               <h3 className="font-display text-xl font-bold text-slate-900 mb-2 group-hover:text-emerald-700 transition-colors">
