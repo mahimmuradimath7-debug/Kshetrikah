@@ -76,16 +76,31 @@ export function SiteFooter() {
           </div>
         </div>
 
-        <div className="mt-12 pt-6 border-t border-white/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
-          <div className="flex items-center gap-3">
-            <span className="px-2.5 py-1 rounded-full text-[11px] font-black tracking-wider bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 text-slate-950 shadow-md">
-              TEAM BITHEADS
-            </span>
-            <p className="text-slate-400">
-              {t('copyright', { year })}
-            </p>
+        <div className="mt-12 pt-6 border-t border-white/10 flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3">
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-black tracking-wider bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 text-slate-950 shadow-md">
+                TEAM BITHEADS
+              </span>
+              <p className="text-slate-400">
+                {t('copyright', { year })}
+              </p>
+            </div>
+            <p className="text-emerald-300/80 font-medium">{t('free')}</p>
           </div>
-          <p className="text-emerald-300/80 font-medium">{t('free')}</p>
+          {/* Developer Credits */}
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="text-slate-500 font-medium">Developed by:</span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              Mahim.s.M
+            </span>
+            <span className="text-slate-600">&</span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-teal-500/10 border border-teal-500/30 text-teal-300 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
+              Pavan.p.C
+            </span>
+          </div>
         </div>
       </div>
     </footer>
